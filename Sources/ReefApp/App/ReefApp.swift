@@ -6,8 +6,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notchController: NotchWindowController!
     private var mouseMonitor: MouseMonitor!
 
+    private var termSource: DispatchSourceSignal?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Paths.ensureDirectories()
+        signal(SIGTERM, SIG_IGN)
+        termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        termSource?.setEventHandler { NSApp.terminate(nil) }
+        termSource?.resume()
         state = AppState()
         notchController = NotchWindowController(state: state)
         mouseMonitor = MouseMonitor(state: state, controller: notchController)
