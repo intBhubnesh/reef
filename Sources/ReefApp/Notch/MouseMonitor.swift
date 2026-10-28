@@ -25,11 +25,9 @@ final class MouseMonitor {
             Task { @MainActor in self?.globalClick() }
         } as Any)
         monitors.append(NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            if event.keyCode == 53 { // esc
-                Task { @MainActor in self?.state.escape() }
-                return nil
-            }
-            return event
+            guard let self, let shortcut = PanelShortcut.from(event: event), self.controller.isExpanded else { return event }
+            Task { @MainActor in self.state.perform(shortcut) }
+            return nil
         } as Any)
     }
 

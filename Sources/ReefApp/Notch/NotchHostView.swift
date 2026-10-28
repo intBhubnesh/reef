@@ -15,7 +15,7 @@ struct NotchHostView: View {
                     .fill(Theme.panel)
                     .shadow(color: .black.opacity(expanded ? 0.45 : 0.25), radius: expanded ? 18 : 6, y: expanded ? 8 : 2)
                 if expanded {
-                    PanelContainer(maxHeight: geometry.panelRect.height)
+                    PanelView(maxHeight: geometry.panelRect.height)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 } else {
                     PillView()
@@ -30,22 +30,5 @@ struct NotchHostView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: expanded)
-    }
-}
-
-/// Placeholder until Task 11 supplies the real panel content.
-struct PanelContainer: View {
-    let maxHeight: CGFloat
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(app.visibleSessions.isEmpty ? "No agent sessions" : "\(app.visibleSessions.count) session(s)")
-                .font(Theme.body).foregroundStyle(Theme.textSecondary)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 80)
-        .frame(maxHeight: maxHeight)
     }
 }

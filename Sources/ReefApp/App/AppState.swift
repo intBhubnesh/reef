@@ -149,8 +149,91 @@ final class AppState {
         guard let entry = pendingRequests.first(where: { $0.request.requestID == requestID }) else { return }
         let resolved = pending.resolve(requestID: requestID, decision: decision, source: entry.session.key.source)
         Log.info("session", "decision", ["request": requestID, "resolved": resolved ? "1" : "0"])
+        questionSelections[requestID] = nil
         apply(SessionReducer.clearRequest(&sessionState, key: entry.session.key, requestID: requestID))
     }
+
+    func alwaysAllow(requestID: String) {
+        guard let entry = pendingRequests.first(where: { $0.request.requestID == requestID }) else { return }
+        let event = entry.request.event
+        let always = AlwaysAllow(toolName: event.toolName ?? "", suggestion: event.permissionSuggestions?.first)
+        decide(requestID: requestID, decision: .allow(alwaysAllow: always))
+    }
+
+    // MARK: Questions and plans
+
+    var questionSelections: [String: QuestionSelection] = [:]
+
+    func selection(for requestID: String, questions: [Question]) -> QuestionSelection {
+        questionSelections[requestID] ?? QuestionSelection(questions: questions)
+    }
+
+    func updateSelection(for requestID: String, questions: [Question], _ change: (inout QuestionSelection) -> Void) {
+        var current = selection(for: requestID, questions: questions)
+        change(&current)
+        questionSelections[requestID] = current
+    }
+
+    func answerQuestion(requestID: String) {
+        guard let entry = pendingRequests.first(where: { $0.request.requestID == requestID }) else { return }
+        let input = entry.request.event.toolInput ?? [:]
+        let questions = QuestionAnswer.parse(toolInput: input)
+        let current = selection(for: requestID, questions: questions)
+        guard current.canSubmit else { return }
+        decide(requestID: requestID, decision: .allow(updatedInput: QuestionAnswer.updatedInput(original: input, answers: current.answers())))
+    }
+
+    func answerPlan(requestID: String, approve: Bool, feedback: String) {
+        guard let entry = pendingRequests.first(where: { $0.request.requestID == requestID }) else { return }
+        let input = entry.request.event.toolInput ?? [:]
+        if approve {
+            decide(requestID: requestID, decision: .allow(updatedInput: PlanAnswer.updatedInput(original: input)))
+        } else {
+            decide(requestID: requestID, decision: .deny(message: feedback.isEmpty ? "Plan rejected from Reef" : feedback))
+        }
+    }
+
+    // MARK: Shortcuts, jump, settings
+
+    func perform(_ shortcut: PanelShortcut) {
+        let oldest = pendingRequests.first(where: { $0.request.isLive })
+        switch shortcut {
+        case .collapse: escape()
+        case .allow:
+            guard let oldest else { return }
+            if oldest.request.kind == .plan { answerPlan(requestID: oldest.request.requestID, approve: true, feedback: "") }
+            else if oldest.request.kind == .permission { decide(requestID: oldest.request.requestID, decision: .allow()) }
+        case .deny:
+            guard let oldest, oldest.request.kind != .question else { return }
+            decide(requestID: oldest.request.requestID, decision: .deny(message: "Denied from Reef"))
+        case .alwaysAllow:
+            guard let oldest, oldest.request.kind == .permission, oldest.session.key.source == .claude else { return }
+            alwaysAllow(requestID: oldest.request.requestID)
+        case .submit:
+            guard let oldest, oldest.request.kind == .question else { return }
+            answerQuestion(requestID: oldest.request.requestID)
+        case .jump:
+            if let session = oldest?.session ?? visibleSessions.first { jump(session: session) }
+        }
+    }
+
+    func jump(session: Session) {
+        Log.info("jump", "requested", ["session": String(session.key.sessionID.prefix(8)), "headless": session.terminal.isHeadless ? "1" : "0"])
+    }
+
+    func openSettings() {
+        Log.info("ui", "settings requested")
+    }
+
+    func readFile(_ path: String) -> String? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attrs[.size] as? Int, size < 1_000_000 else { return nil }
+        return try? String(contentsOfFile: path, encoding: .utf8)
+    }
+
+    var showProject = true
+    var showBranch = true
+    var showSubagents = true
 
     // MARK: - Timers
 

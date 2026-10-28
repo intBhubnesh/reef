@@ -62,20 +62,3 @@ struct SpriteView: View {
         .accessibilityLabel("\(source.rawValue) session")
     }
 }
-
-enum Theme {
-    static let panel = Color.black
-    static let card = Color(red: 0.08, green: 0.08, blue: 0.08)
-    static let cardBorder = Color(red: 0.12, green: 0.12, blue: 0.12)
-    static let textPrimary = Color(red: 0.95, green: 0.95, blue: 0.95)
-    static let textSecondary = Color(red: 0.6, green: 0.6, blue: 0.6)
-    static let accent = Color(red: 0.43, green: 0.63, blue: 1.0)
-    static let waiting = Color(red: 1.0, green: 0.7, blue: 0.25)
-    static let done = Color(red: 0.3, green: 0.85, blue: 0.39)
-    static let failed = Color(red: 1.0, green: 0.36, blue: 0.36)
-    static let panelRadius: CGFloat = 24
-    static let pillRadius: CGFloat = 16
-    static let cardRadius: CGFloat = 12
-    static let body = Font.system(size: 13)
-    static let mono = Font.system(size: 12, design: .monospaced)
-}

@@ -1,0 +1,2 @@
+{"hook_event_name":"PermissionRequest","session_id":"demo-claude-1","cwd":"__ROOT__","tool_name":"ExitPlanMode","tool_use_id":"tu-plan-1",
+ "tool_input":{"plan":"## Refactor auth\n\n1. Extract `TokenStore` from `AuthService`\n2. Add retry with backoff\n3. Update the tests\n\nRisk: the session cache key changes.","planFilePath":"/tmp/plan.md"}}

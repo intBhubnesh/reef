@@ -1,0 +1,2 @@
+{"hook_event_name":"Stop","session_id":"demo-claude-1","cwd":"__ROOT__",
+ "last_assistant_message":"Fixed the flaky retry test by bumping `retries` to 5 and adding jitter. All 12 tests pass."}
