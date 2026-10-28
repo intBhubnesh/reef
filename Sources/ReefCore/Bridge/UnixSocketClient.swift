@@ -36,6 +36,12 @@ public final class UnixSocketClient {
         fd = sock
     }
 
+    /// Writes a line on an already-open connection without closing it.
+    public func sendRaw(_ line: Data) throws {
+        try connect()
+        try writeAll(line)
+    }
+
     public func close() {
         if fd >= 0 { Darwin.close(fd); fd = -1 }
     }
