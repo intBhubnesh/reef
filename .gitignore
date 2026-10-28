@@ -1,0 +1,6 @@
+.build/
+dist/
+*.app
+.superpowers/
+.DS_Store
+Resources/Fonts/
