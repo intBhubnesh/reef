@@ -6,11 +6,25 @@ import ReefCore
 @MainActor @Observable
 final class AppState {
     var sessionState = SessionState()
-    var notch = NotchMachine(timing: NotchTiming())
-    var muted = false
-    var showHeadless = false
-    var idleCleanup: TimeInterval = 2 * 3600
+    var notch: NotchMachine
     var revealedKeys: Set<SessionKey> = []
+    var settings: ReefSettings {
+        didSet {
+            guard settings != oldValue else { return }
+            notch.timing = settings.notchTiming
+            try? settings.save(to: Paths.settingsFile)
+            onSettingsChanged?()
+        }
+    }
+    @ObservationIgnored var onSettingsChanged: (() -> Void)?
+    @ObservationIgnored let sounds = SoundPlayer()
+
+    var muted: Bool { get { settings.muted } set { settings.muted = newValue } }
+    var showHeadless: Bool { settings.showHeadless }
+    var showProject: Bool { settings.showProject }
+    var showBranch: Bool { settings.showBranch }
+    var showSubagents: Bool { settings.showSubagents }
+    var idleCleanup: TimeInterval { settings.idleCleanupHours * 3600 }
 
     @ObservationIgnored let pending = PendingRequests()
     @ObservationIgnored let jumpEngine = JumpEngine()
@@ -25,6 +39,9 @@ final class AppState {
     static let waitDeadline: TimeInterval = 3600
 
     init() {
+        let loaded = ReefSettings.load(from: Paths.settingsFile)
+        settings = loaded
+        notch = NotchMachine(timing: loaded.notchTiming)
         server = UnixSocketServer(path: Paths.socketPath, queue: serverQueue)
         server.onRequest = { [weak self] request, connection in
             DispatchQueue.main.async { self?.handle(request: request, connection: connection) }
@@ -153,7 +170,9 @@ final class AppState {
                 revealedKeys.insert(key)
                 notch.apply(.taskFailed(now))
             case let .sound(kind):
-                Log.info("sound", kind.rawValue, ["muted": muted ? "1" : "0"])
+                let enabled = settings.soundEnabled(kind)
+                Log.info("sound", kind.rawValue, ["played": enabled ? "1" : "0"])
+                if enabled { sounds.play(kind) }
             case let .removed(key):
                 revealedKeys.remove(key)
                 terminals.forget(key)
@@ -173,6 +192,7 @@ final class AppState {
 
     func hover(inside: Bool) {
         let now = Date()
+        if inside, !settings.hoverExpand, notch.state == .closed { return }
         notch.apply(inside ? .hoverEnter(now) : .hoverExit(now))
         stateDidChange()
     }
@@ -272,9 +292,6 @@ final class AppState {
         return try? String(contentsOfFile: path, encoding: .utf8)
     }
 
-    var showProject = true
-    var showBranch = true
-    var showSubagents = true
 
     // MARK: - Timers
 
