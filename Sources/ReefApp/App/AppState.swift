@@ -13,6 +13,9 @@ final class AppState {
     var revealedKeys: Set<SessionKey> = []
 
     @ObservationIgnored let pending = PendingRequests()
+    @ObservationIgnored let jumpEngine = JumpEngine()
+    @ObservationIgnored let frontmost = FrontmostTracker()
+    @ObservationIgnored let terminals = SessionTerminalsStore(url: Paths.sessionTerminalsFile)
     @ObservationIgnored private let server: UnixSocketServer
     @ObservationIgnored private let serverQueue = DispatchQueue(label: "app.reef.socket")
     @ObservationIgnored private var deadlineTimer: Timer?
@@ -27,6 +30,7 @@ final class AppState {
             DispatchQueue.main.async { self?.handle(request: request, connection: connection) }
         }
         pending.onDropped = { [weak self] requestID in self?.requestDropped(requestID) }
+        frontmost.onActivation = { [weak self] _ in self?.releaseRequestsForFrontmostTerminal() }
     }
 
     // MARK: - Lifecycle
@@ -84,7 +88,35 @@ final class AppState {
         Log.info("session", "recv", ["event": event.name, "source": sourceRaw, "session": String(event.sessionID.prefix(8)),
                                      "tool": event.toolName ?? ""])
         let effects = SessionReducer.reduce(&sessionState, event: event, requestID: requestID, now: Date())
+        rememberTerminal(for: key)
         apply(effects)
+    }
+
+    /// Persist a known terminal; restore one for sessions whose events carried no identity.
+    private func rememberTerminal(for key: SessionKey) {
+        guard var session = sessionState.sessions[key] else { return }
+        if session.terminal.isHeadless, let stored = terminals.identity(for: key) {
+            session.terminal = stored
+            sessionState.sessions[key] = session
+        } else {
+            terminals.remember(session.terminal, for: key)
+        }
+    }
+
+    /// Approvals follow focus: a request whose terminal is frontmost goes back to the terminal prompt.
+    private func releaseRequestsForFrontmostTerminal() {
+        var changed = false
+        for entry in pendingRequests where entry.request.isLive && frontmost.isFrontmost(entry.session.terminal) {
+            releaseToTerminal(requestID: entry.request.requestID, key: entry.session.key)
+            changed = true
+        }
+        if changed { syncPendingCount(); stateDidChange() }
+    }
+
+    private func releaseToTerminal(requestID: String, key: SessionKey) {
+        pending.release(requestID: requestID)
+        SessionReducer.markReleased(&sessionState, key: key, requestID: requestID)
+        Log.info("session", "request released to terminal", ["request": requestID])
     }
 
     private func requestDropped(_ requestID: String) {
@@ -105,6 +137,9 @@ final class AppState {
                     pending.release(requestID: request.requestID)
                     continue
                 }
+                if frontmost.isFrontmost(session.terminal) {
+                    releaseToTerminal(requestID: request.requestID, key: key)
+                }
                 syncPendingCount()
                 notch.apply(.requestArrived(now))
             case let .requestCleared(_, requestID):
@@ -121,6 +156,7 @@ final class AppState {
                 Log.info("sound", kind.rawValue, ["muted": muted ? "1" : "0"])
             case let .removed(key):
                 revealedKeys.remove(key)
+                terminals.forget(key)
                 pending.releaseAll(for: key)
                 syncPendingCount()
                 notch.apply(.requestsCleared(now))
@@ -218,7 +254,12 @@ final class AppState {
     }
 
     func jump(session: Session) {
-        Log.info("jump", "requested", ["session": String(session.key.sessionID.prefix(8)), "headless": session.terminal.isHeadless ? "1" : "0"])
+        let steps = JumpPlanner.plan(session.terminal, cwd: session.cwd)
+        Log.info("jump", "requested", ["session": String(session.key.sessionID.prefix(8)), "steps": "\(steps.count)"])
+        guard !steps.isEmpty else { return }
+        notch.apply(.escape(Date()))
+        stateDidChange()
+        Task { await jumpEngine.run(steps) }
     }
 
     func openSettings() {
