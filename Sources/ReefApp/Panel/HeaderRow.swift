@@ -5,9 +5,9 @@ struct HeaderRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(title)
+            Text(app.notice ?? title)
                 .font(Theme.body.weight(.semibold))
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(app.notice == nil ? Theme.textSecondary : Theme.waiting)
                 .lineLimit(1)
             Spacer()
             Button { app.muted.toggle() } label: {

@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import ReefCore
+import UserNotifications
 
 /// Owns every piece of live state: sessions, the notch machine, pending requests and the socket server.
 @MainActor @Observable
@@ -166,6 +167,7 @@ final class AppState {
             case let .revealCompletion(key):
                 revealedKeys.insert(key)
                 notch.apply(.taskComplete(now))
+                notifyIfAllFinished()
             case let .revealFailure(key):
                 revealedKeys.insert(key)
                 notch.apply(.taskFailed(now))
@@ -182,6 +184,26 @@ final class AppState {
             }
         }
         stateDidChange()
+    }
+
+    /// "All agents finished": a macOS notification once no visible session is still working. Needs a bundle id.
+    private func notifyIfAllFinished() {
+        guard settings.notifyAllFinished, Bundle.main.bundleIdentifier != nil else { return }
+        let busy = visibleSessions.contains { session in
+            switch session.status {
+            case .working, .runningTool, .compacting: return true
+            default: return session.status.isWaitingOnUser
+            }
+        }
+        guard !busy else { return }
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "All agents finished"
+            content.body = "No agent is working anymore."
+            center.add(UNNotificationRequest(identifier: "reef.all-finished", content: content, trigger: nil))
+        }
     }
 
     private func syncPendingCount() {
@@ -282,8 +304,38 @@ final class AppState {
         Task { await jumpEngine.run(steps) }
     }
 
+    @ObservationIgnored var onOpenSettings: (() -> Void)?
+    var notice: String?
+
     func openSettings() {
         Log.info("ui", "settings requested")
+        onOpenSettings?()
+    }
+
+    func showNotice(_ text: String) {
+        notice = text
+        stateDidChange()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            if self?.notice == text { self?.notice = nil; self?.stateDidChange() }
+        }
+    }
+
+    // MARK: Hooks
+
+    var installedHookSources: [AgentSource] {
+        settings.hooksInstalledByUser.compactMap(AgentSource.init(rawValue:))
+    }
+
+    func installHooks(_ source: AgentSource) -> String? {
+        if let error = HookInstaller.install(source) { return error }
+        if !settings.hooksInstalledByUser.contains(source.rawValue) { settings.hooksInstalledByUser.append(source.rawValue) }
+        return nil
+    }
+
+    func uninstallHooks(_ source: AgentSource) -> String? {
+        if let error = HookInstaller.uninstall(source) { return error }
+        settings.hooksInstalledByUser.removeAll { $0 == source.rawValue }
+        return nil
     }
 
     func readFile(_ path: String) -> String? {

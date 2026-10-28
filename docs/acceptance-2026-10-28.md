@@ -1,0 +1,22 @@
+# Reef Stage 1 acceptance — 2026-10-28
+
+Run on a 14-inch MacBook Pro (macOS 26, Apple Silicon) with Claude Code 2.1.267, Codex 0.140.0, kitty with `allow_remote_control yes`. Build: `scripts/bundle.sh` → `dist/Reef.app` (universal, ad hoc signed). Vibe Island was quit for the run. Fixtures: `scripts/dev/fixtures`, driver scripts in the session scratchpad.
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | `claude` in kitty shows a sprite within 1 s | PASS | Real sessions (`-p` and interactive) appeared on the pill; log `recv SessionStart/UserPromptSubmit` within the same second. |
+| 2 | Bash permission: Allow lets Claude continue, Deny makes Claude report it; unanswered falls back | PASS | Interactive `claude` in kitty, focus on Finder: card showed the command; Allow → TUI "Allowed by PermissionRequest hook", `REEF_OK`, file created; Deny → "Denied by PermissionRequest hook / Error: Denied from Reef". Timeout path covered by `testExpireReleasesWithNoDecision`; headless `claude -p` never fires PermissionRequest (Claude Code denies without hooks), so the terminal prompt only exists in interactive sessions. |
+| 3 | Codex `apply_patch` shows a diff and Allow proceeds | PARTIAL | Real Codex 0.140 session delivered `SessionStart`/`UserPromptSubmit` through Reef's hook, but its model (`gpt-5.6-sol`) refuses to run on 0.140 ("requires a newer version of Codex"), so no real approval could be produced without upgrading the user's Codex. The apply_patch card (two files, add/remove lines, no "Always allow") and the Allow reply (`behavior: allow`, no `updatedPermissions`) were verified with `scripts/dev/fixtures/codex-apply-patch.json`. Settings shows the trust state per Reef entry. |
+| 4 | Completion card, done tone, collapse after 5 s | PASS | `stop.json` and the real TUI session: card with Markdown message, `sound done played=1`, collapsed at 5 s with a green sprite. |
+| 5 | Click focuses the right kitty window; Ghostty tab; VS Code window | PARTIAL | kitty: `scripts/dev/jump-test.sh` refocused window 1 from window 2 (`kitten @ focus-window` ok). Ghostty: implemented via Accessibility title-marker search but not exercised live (Accessibility must be granted to the ad hoc app by the user; the fallback activates Ghostty). VS Code: `open -b com.microsoft.VSCode <cwd>` step implemented, not exercised live. |
+| 6 | Quitting with a pending request does not hang the agent | PASS | Pending `wait` request answered `{}` 0.15 s after `quit` (2.15 s including the deliberate 2 s hold); socket removed. |
+| 7 | `swift test` passes | PASS | 99 tests, 0 failures. |
+| 8 | AskUserQuestion answered from the notch | PASS | `question.json`: React + Submit → `updatedInput.answers = {"Which framework?": "React"}` with the original `questions` echoed. Not yet observed with a live Claude question (none was asked during the run). |
+| 9 | ExitPlanMode approve / deny with feedback | PASS (fixture) | `plan.json`: Approve → allow with `plan` + `planFilePath` echoed; Deny path sends the feedback as `message`. |
+| 10 | Two parallel requests show both cards, oldest first, resolve independently | PASS | Edit + plan + question stacked oldest-first; each resolved alone (`testTwoWaitRequestsAreIndependent` as well). |
+| 11 | Terminal frontmost → released within 200 ms with read-only card | PASS | 0.107 s when kitty was frontmost at arrival; 0.118 s after activating kitty for a held request. |
+| 12 | Shortcuts and mute | PARTIAL | Mute: header speaker silences and persists. Shortcuts: implemented as a CGEvent tap that needs Accessibility (a non-activating panel never receives keys otherwise); could not be exercised without the user granting Accessibility to Reef.app. |
+| 13 | Removing Reef's hook entries restores them within 5 s with a notice | PASS | Entries deleted by script, 14 restored, log "restored missing hook entries", header notice shown. |
+| 14 | Six Settings tabs, General and Integrations live | PASS | All tabs captured; Install/Uninstall wrote both hook files with timestamped backups and copied the bridge to `~/.reef/bin`. |
+
+Open items for the user: grant Accessibility to `dist/Reef.app` (Settings → Integrations) to enable Ghostty tab focus and keyboard shortcuts; upgrade Codex to exercise a real Codex approval; quit Vibe Island while testing Reef (both use the notch).

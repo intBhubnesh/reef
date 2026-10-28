@@ -1,0 +1,2 @@
+{"hook_event_name":"PermissionRequest","session_id":"demo-codex-1","cwd":"__ROOT__","tool_name":"apply_patch","tool_use_id":"tu-patch-1","model":"gpt-5","permission_mode":"default","turn_id":"t1",
+ "tool_input":{"patch":"*** Begin Patch\n*** Update File: Sources/App.swift\n@@ func start()\n     let retries = 3\n-    let timeout = 30\n+    let timeout = 60\n     run()\n*** Add File: Sources/New.swift\n+import Foundation\n+let created = true\n*** End Patch"}}

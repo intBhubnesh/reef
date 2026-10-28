@@ -87,10 +87,17 @@ final class HookConfigTests: XCTestCase {
         [hooks.state."/Users/x/.codex/hooks.json:stop:1:0"]
         trusted_hash = "sha256:cd"
         """
-        XCTAssertEqual(CodexTrust.isTrusted(hooksJSONPath: "/Users/x/.codex/hooks.json", event: "PermissionRequest", configTOML: toml), true)
-        XCTAssertEqual(CodexTrust.isTrusted(hooksJSONPath: "/Users/x/.codex/hooks.json", event: "Stop", configTOML: toml), true)
-        XCTAssertEqual(CodexTrust.isTrusted(hooksJSONPath: "/Users/x/.codex/hooks.json", event: "SessionStart", configTOML: toml), false)
-        XCTAssertNil(CodexTrust.isTrusted(hooksJSONPath: "/Users/x/.codex/hooks.json", event: "Stop", configTOML: "[mcp_servers.x]\nurl = \"y\""))
+        let path = "/Users/x/.codex/hooks.json"
+        XCTAssertEqual(CodexTrust.isTrusted(hooksJSONPath: path, event: "PermissionRequest", entryIndex: 0, configTOML: toml), true)
+        XCTAssertEqual(CodexTrust.isTrusted(hooksJSONPath: path, event: "PermissionRequest", entryIndex: 1, configTOML: toml), false,
+                       "another app's trusted entry must not count for ours")
+        XCTAssertEqual(CodexTrust.isTrusted(hooksJSONPath: path, event: "Stop", entryIndex: 1, configTOML: toml), true)
+        XCTAssertEqual(CodexTrust.isTrusted(hooksJSONPath: path, event: "SessionStart", entryIndex: 0, configTOML: toml), false)
+        XCTAssertNil(CodexTrust.isTrusted(hooksJSONPath: path, event: "Stop", entryIndex: 1, configTOML: "[mcp_servers.x]\nurl = \"y\""))
         XCTAssertEqual(CodexTrust.trustedCommands(configTOML: toml).count, 2)
+        let root = HookConfig.install(into: ["hooks": ["Stop": [["hooks": [["type": "command", "command": "other"]]]]]], source: .codex)
+        XCTAssertEqual(CodexTrust.ourEntryIndex(in: root, event: "Stop"), 1)
+        XCTAssertEqual(CodexTrust.ourEntryIndex(in: root, event: "PermissionRequest"), 0)
+        XCTAssertNil(CodexTrust.ourEntryIndex(in: [:], event: "Stop"))
     }
 }
