@@ -1,4 +1,7 @@
 import Foundation
+import ReefCore
 
-FileHandle.standardOutput.write("{}\n".data(using: .utf8)!)
-exit(0)
+let stdin = FileHandle.standardInput.readDataToEndOfFile()
+let code = BridgeCLI.run(arguments: Array(CommandLine.arguments.dropFirst()), stdin: stdin,
+                         env: ProcessInfo.processInfo.environment) { FileHandle.standardOutput.write($0) }
+exit(code)
