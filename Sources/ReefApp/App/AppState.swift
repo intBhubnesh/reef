@@ -1,7 +1,7 @@
 import AppKit
 import Observation
 import ReefCore
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// Owns every piece of live state: sessions, the notch machine, pending requests and the socket server.
 @MainActor @Observable
@@ -128,7 +128,11 @@ final class AppState {
             releaseToTerminal(requestID: entry.request.requestID, key: entry.session.key)
             changed = true
         }
-        if changed { syncPendingCount(); stateDidChange() }
+        if changed {
+            syncPendingCount()
+            notch.apply(.requestsCleared(Date()))
+            stateDidChange()
+        }
     }
 
     private func releaseToTerminal(requestID: String, key: SessionKey) {
@@ -156,10 +160,14 @@ final class AppState {
                     continue
                 }
                 if frontmost.isFrontmost(session.terminal) {
+                    // The user is already looking at that terminal: hand the prompt back and only peek the card.
                     releaseToTerminal(requestID: request.requestID, key: key)
+                    syncPendingCount()
+                    notch.apply(.taskComplete(now))
+                } else {
+                    syncPendingCount()
+                    notch.apply(.requestArrived(now))
                 }
-                syncPendingCount()
-                notch.apply(.requestArrived(now))
             case let .requestCleared(_, requestID):
                 pending.release(requestID: requestID)
                 syncPendingCount()
@@ -223,11 +231,23 @@ final class AppState {
     func outsideClick() { notch.apply(.outsideClick(Date())); stateDidChange() }
     func escape() { notch.apply(.escape(Date())); stateDidChange() }
 
+    /// Presentations are computed once per request (diffs can be large), never per render.
+    @ObservationIgnored private var presentations: [String: ApprovalPresentation] = [:]
+
+    func presentation(for request: PendingRequest, in session: Session) -> ApprovalPresentation {
+        if let cached = presentations[request.requestID] { return cached }
+        let made = ApprovalPresentation.make(toolName: request.event.toolName ?? "tool", toolInput: request.event.toolInput ?? [:],
+                                             source: session.key.source, readFile: readFile)
+        presentations[request.requestID] = made
+        return made
+    }
+
     func decide(requestID: String, decision: Decision) {
         guard let entry = pendingRequests.first(where: { $0.request.requestID == requestID }) else { return }
         let resolved = pending.resolve(requestID: requestID, decision: decision, source: entry.session.key.source)
         Log.info("session", "decision", ["request": requestID, "resolved": resolved ? "1" : "0"])
         questionSelections[requestID] = nil
+        presentations[requestID] = nil
         apply(SessionReducer.clearRequest(&sessionState, key: entry.session.key, requestID: requestID))
     }
 
@@ -349,12 +369,14 @@ final class AppState {
 
     private func housekeeping() {
         let now = Date()
-        for id in pending.expire(now: now) {
+        let expired = pending.expire(now: now)
+        for id in expired {
             for session in sessions where session.pending.contains(where: { $0.requestID == id }) {
                 SessionReducer.markReleased(&sessionState, key: session.key, requestID: id)
             }
             Log.info("session", "request expired", ["request": id])
         }
+        if !expired.isEmpty { syncPendingCount(); notch.apply(.requestsCleared(now)) }
         if Int(now.timeIntervalSince1970) % 60 == 0 {
             apply(SessionReducer.pruneIdle(&sessionState, now: now, maxIdle: idleCleanup))
         }

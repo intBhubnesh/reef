@@ -34,7 +34,7 @@ public struct QuestionSelection: Equatable {
 
     /// Every question has at least one option or a custom answer.
     public var canSubmit: Bool {
-        questions.allSatisfy { !(chosen[$0.question] ?? []).isEmpty || custom[$0.question] != nil }
+        !questions.isEmpty && questions.allSatisfy { !(chosen[$0.question] ?? []).isEmpty || custom[$0.question] != nil }
     }
 
     /// Labels in the question's option order, then the custom answer.

@@ -35,7 +35,7 @@ final class NotchWindowController {
         self.state = state
         let screen = NSScreen.main ?? NSScreen.screens[0]
         screenFrame = screen.frame
-        geometry = Self.geometry(for: screen)
+        geometry = Self.geometry(for: screen, settings: state.settings)
         panel = NotchPanel(frame: Self.appKitRect(geometry.pillRect, in: screenFrame))
         let host = NSHostingView(rootView: NotchHostView(controller: self).environment(state))
         host.frame = panel.contentView!.bounds
@@ -46,13 +46,14 @@ final class NotchWindowController {
         }
     }
 
-    static func geometry(for screen: NSScreen) -> NotchGeometry {
+    static func geometry(for screen: NSScreen, settings: ReefSettings) -> NotchGeometry {
         var auxLeft: CGRect?, auxRight: CGRect?
         if #available(macOS 12.0, *) {
             auxLeft = screen.auxiliaryTopLeftArea
             auxRight = screen.auxiliaryTopRightArea
         }
-        return NotchGeometry.compute(screen: screen.frame, safeTop: screen.safeAreaInsets.top, auxLeft: auxLeft, auxRight: auxRight)
+        return NotchGeometry.compute(screen: screen.frame, safeTop: screen.safeAreaInsets.top, auxLeft: auxLeft, auxRight: auxRight,
+                                     panelMax: CGSize(width: settings.panelMaxWidth, height: settings.panelMaxHeight))
     }
 
     /// Converts a top-left-origin rect (relative to the screen) into AppKit screen coordinates.
@@ -72,7 +73,7 @@ final class NotchWindowController {
     func relayout() {
         let screen = NSScreen.main ?? NSScreen.screens[0]
         screenFrame = screen.frame
-        geometry = Self.geometry(for: screen)
+        geometry = Self.geometry(for: screen, settings: state.settings)
         panel.setFrame(expanded ? panelScreenRect : pillScreenRect, display: true)
     }
 

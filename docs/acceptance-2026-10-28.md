@@ -19,4 +19,6 @@ Run on a 14-inch MacBook Pro (macOS 26, Apple Silicon) with Claude Code 2.1.267,
 | 13 | Removing Reef's hook entries restores them within 5 s with a notice | PASS | Entries deleted by script, 14 restored, log "restored missing hook entries", header notice shown. |
 | 14 | Six Settings tabs, General and Integrations live | PASS | All tabs captured; Install/Uninstall wrote both hook files with timestamped backups and copied the bridge to `~/.reef/bin`. |
 
+**Review fix pass (2026-10-30):** shortcuts now fire only while the pointer is over the expanded panel (keystrokes aimed at other apps are never consumed); unparseable hook files are never overwritten (atomic writes, mode preserved); a released or expired request collapses the panel; diffs are capped at 2000 lines with Edit diffs windowed around the change and presentations cached per request; the Display size sliders drive the geometry; focus release matches the kitty window via `kitten @ ls`; `apply_patch` deletes are labelled; `Connection.onClosed` is lock-guarded; `docs/protocol.md` added. 7 regression tests, suite 106/106.
+
 Open items for the user: grant Accessibility to `dist/Reef.app` (Settings → Integrations) to enable Ghostty tab focus and keyboard shortcuts; upgrade Codex to exercise a real Codex approval; quit Vibe Island while testing Reef (both use the notch).

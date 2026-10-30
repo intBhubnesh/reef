@@ -28,7 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   onHealed: { [weak self] source in
                                       self?.state.showNotice("Restored \(source == .claude ? "Claude Code" : "Codex") hooks that had been removed.")
                                   })
-        hotkeys = GlobalHotkeys(isActive: { [weak self] in self?.notchController.isExpanded ?? false },
+        // Shortcuts only fire while the pointer is over the expanded panel: keystrokes aimed at another app
+        // (esc in vim, ⌃A in a shell) must never become approvals.
+        hotkeys = GlobalHotkeys(isActive: { [weak self] in
+                                    guard let controller = self?.notchController, controller.isExpanded else { return false }
+                                    return controller.panel.frame.contains(NSEvent.mouseLocation)
+                                },
                                 perform: { [weak self] shortcut in self?.state.perform(shortcut) })
         installMenu()
         state.start()

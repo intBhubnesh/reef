@@ -111,16 +111,31 @@ public enum HookFiles {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
+    /// Applies `change` to the JSON file. An absent file starts from `{}`; a file that exists but cannot be
+    /// parsed is left untouched (returns false) so a broken or half-written settings file is never replaced.
+    /// Writes atomically, keeps the original POSIX mode, and leaves a timestamped backup.
     @discardableResult
     public static func transform(file: String, _ change: ([String: Any]) -> [String: Any]) -> Bool {
-        let existing = read(file: file) ?? [:]
-        if FileManager.default.fileExists(atPath: file) {
+        let fm = FileManager.default
+        let exists = fm.fileExists(atPath: file)
+        var existing: [String: Any] = [:]
+        var mode: Int?
+        if exists {
+            guard let parsed = read(file: file) else { return false }
+            existing = parsed
+            mode = (try? fm.attributesOfItem(atPath: file))?[.posixPermissions] as? Int
             let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-            try? FileManager.default.copyItem(atPath: file, toPath: "\(file).backup.\(stamp)")
+            try? fm.copyItem(atPath: file, toPath: "\(file).backup.\(stamp)")
         }
         let updated = change(existing)
         guard let data = try? JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys]) else { return false }
-        try? FileManager.default.createDirectory(atPath: (file as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-        return FileManager.default.createFile(atPath: file, contents: data)
+        try? fm.createDirectory(atPath: (file as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        do {
+            try data.write(to: URL(fileURLWithPath: file), options: .atomic)
+            if let mode { try? fm.setAttributes([.posixPermissions: mode], ofItemAtPath: file) }
+            return true
+        } catch {
+            return false
+        }
     }
 }

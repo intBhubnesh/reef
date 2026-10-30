@@ -10,7 +10,14 @@ public final class UnixSocketServer {
         fileprivate var source: DispatchSourceRead?
         fileprivate let framer = LineFramer()
         fileprivate var isOpen = true
-        public var onClosed: (() -> Void)?
+        private let closedLock = NSLock()
+        private var closedHandler: (() -> Void)?
+
+        /// Set from any thread; delivered once on the main thread when the connection closes.
+        public var onClosed: (() -> Void)? {
+            get { closedLock.lock(); defer { closedLock.unlock() }; return closedHandler }
+            set { closedLock.lock(); closedHandler = newValue; closedLock.unlock() }
+        }
 
         init(fd: Int32, queue: DispatchQueue) { self.fd = fd; self.queue = queue }
 
@@ -38,8 +45,10 @@ public final class UnixSocketServer {
             source?.cancel()
             source = nil
             Darwin.close(fd)
-            let handler = onClosed
-            onClosed = nil
+            closedLock.lock()
+            let handler = closedHandler
+            closedHandler = nil
+            closedLock.unlock()
             DispatchQueue.main.async { handler?() }
         }
     }

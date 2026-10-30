@@ -4,24 +4,32 @@ import SwiftUI
 struct DiffView: View {
     let path: String?
     let lines: [DiffLine]
+    var kind: ApplyPatch.Kind = .update
     var maxLines = 200
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let path {
-                Text(path)
-                    .font(Theme.mono.weight(.semibold))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.04))
+                HStack(spacing: 8) {
+                    Text(path)
+                        .font(Theme.mono.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    if kind == .delete {
+                        Chip(text: "Deletes file", tint: Theme.failed, background: Theme.failed.opacity(0.15))
+                    } else if kind == .add {
+                        Chip(text: "New file", tint: Theme.done, background: Theme.done.opacity(0.15))
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.04))
             }
             if lines.isEmpty {
-                Text("No changes")
-                    .font(Theme.mono).foregroundStyle(Theme.textSecondary)
+                Text(kind == .delete ? "The whole file will be removed." : "No changes")
+                    .font(Theme.mono).foregroundStyle(kind == .delete ? Theme.failed : Theme.textSecondary)
                     .padding(10)
             } else {
                 ForEach(Array(lines.prefix(maxLines).enumerated()), id: \.offset) { _, line in

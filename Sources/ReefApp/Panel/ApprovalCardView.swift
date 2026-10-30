@@ -7,10 +7,7 @@ struct ApprovalCardView: View {
     let session: Session
     let request: PendingRequest
 
-    private var presentation: ApprovalPresentation {
-        ApprovalPresentation.make(toolName: request.event.toolName ?? "tool", toolInput: request.event.toolInput ?? [:],
-                                  source: session.key.source, readFile: app.readFile)
-    }
+    private var presentation: ApprovalPresentation { app.presentation(for: request, in: session) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -46,7 +43,7 @@ struct ApprovalCardView: View {
         case let .multiDiff(files):
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(files.enumerated()), id: \.offset) { _, file in
-                    DiffView(path: file.path, lines: file.lines)
+                    DiffView(path: file.path, lines: file.lines, kind: file.kind)
                 }
             }
         case let .summary(title, detail):

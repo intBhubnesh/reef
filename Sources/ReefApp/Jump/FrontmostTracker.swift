@@ -22,9 +22,13 @@ final class FrontmostTracker {
         }
     }
 
-    /// Bundle match only: a precise window/tab check would need remote control or Accessibility on every event.
+    /// App match, plus the focused kitty window when kitty remote control can tell us.
     func isFrontmost(_ terminal: TerminalIdentity) -> Bool {
-        guard let bundle = terminal.bundleID, let front = frontmostBundleID else { return false }
-        return bundle == front
+        guard let bundle = terminal.bundleID, bundle == frontmostBundleID else { return false }
+        var focusedKitty: Set<Int>?
+        if terminal.kittyWindowID != nil {
+            focusedKitty = KittyRemote.focusedWindowIDs(listenOn: terminal.kittyListenOn ?? terminal.kittyPID.map { "unix:/tmp/kitty-\($0)" })
+        }
+        return FocusMatch.isFocused(terminal, frontmostBundleID: frontmostBundleID, focusedKittyWindows: focusedKitty)
     }
 }
