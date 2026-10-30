@@ -7,6 +7,7 @@ public enum SessionReducer {
         var session = state.sessions[key] ?? Session(key: key, startedAt: now)
         session.lastEventAt = now
         applyIdentity(&session, from: event)
+        let statusBefore = session.status
         var effects: [SessionEffect] = []
 
         switch event.name {
@@ -78,6 +79,7 @@ public enum SessionReducer {
             break
         }
 
+        if session.status != statusBefore { session.statusChangedAt = now }
         state.sessions[key] = session
         return effects
     }
@@ -112,6 +114,7 @@ public enum SessionReducer {
 
     private static func applyIdentity(_ session: inout Session, from event: HookEvent) {
         if let cwd = event.cwd { session.cwd = cwd }
+        if let model = event.model { session.model = model }
         let reef = event.raw["reef"] as? [String: Any]
         let git = reef?["git"] as? [String: Any]
         if let root = git?["root"] as? String {

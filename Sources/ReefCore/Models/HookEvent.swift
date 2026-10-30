@@ -19,6 +19,8 @@ public struct HookEvent {
     public let prompt: String?
     public let transcriptPath: String?
     public let permissionSuggestions: [[String: Any]]?
+    /// Codex sends this on every event; Claude Code sends it on some.
+    public let model: String?
     public let raw: [String: Any]
 
     public init(source: AgentSource, json: [String: Any]) throws {
@@ -36,6 +38,7 @@ public struct HookEvent {
         prompt = json["prompt"] as? String
         transcriptPath = json["transcript_path"] as? String
         permissionSuggestions = json["permission_suggestions"] as? [[String: Any]]
+        model = json["model"] as? String
         raw = json
     }
 
@@ -53,7 +56,7 @@ extension HookEvent: Equatable {
             && lhs.cwd == rhs.cwd && lhs.toolName == rhs.toolName && lhs.toolUseID == rhs.toolUseID
             && lhs.notificationType == rhs.notificationType
             && lhs.lastAssistantMessage == rhs.lastAssistantMessage && lhs.prompt == rhs.prompt
-            && lhs.transcriptPath == rhs.transcriptPath
+            && lhs.transcriptPath == rhs.transcriptPath && lhs.model == rhs.model
             && NSDictionary(dictionary: lhs.toolInput ?? [:]).isEqual(to: rhs.toolInput ?? [:])
             && NSArray(array: lhs.permissionSuggestions ?? []).isEqual(to: rhs.permissionSuggestions ?? [])
     }

@@ -158,4 +158,48 @@ final class SessionReducerTests: XCTestCase {
         XCTAssertEqual(t.ghosttyMarker, "reef:abcdefgh"); XCTAssertFalse(t.isHeadless)
         XCTAssertTrue(TerminalIdentity.from(raw: [:]).isHeadless)
     }
+
+    // MARK: - Stage 2: animation phase origin, seed and model
+
+    func testStatusChangedAtOnlyMovesWhenStatusChanges() {
+        var s = SessionState()
+        _ = apply(&s, event("SessionStart"), at: 0)
+        let created = s.sessions[key]?.statusChangedAt
+        _ = apply(&s, event("UserPromptSubmit"), at: 10)
+        let working = s.sessions[key]?.statusChangedAt
+        XCTAssertEqual(working, t0.addingTimeInterval(10))
+        XCTAssertNotEqual(created, working)
+        _ = apply(&s, event("Notification"), at: 20)
+        XCTAssertEqual(s.sessions[key]?.statusChangedAt, working, "same status keeps the phase origin")
+    }
+
+    func testRapidToolFlipsKeepAdvancingThePhase() {
+        var s = SessionState()
+        for i in 0..<6 {
+            _ = apply(&s, event("PreToolUse", extra: ["tool_name": "Bash", "tool_use_id": "t\(i)"]), at: Double(i) * 0.1)
+            _ = apply(&s, event("PostToolUse", extra: ["tool_name": "Bash", "tool_use_id": "t\(i)"]), at: Double(i) * 0.1 + 0.05)
+        }
+        XCTAssertEqual(s.sessions[key]?.statusChangedAt, t0.addingTimeInterval(0.55))
+        XCTAssertEqual(s.sessions[key]?.status, .working)
+    }
+
+    func testModelIsRecorded() {
+        var s = SessionState()
+        _ = apply(&s, event("UserPromptSubmit", extra: ["model": "claude-opus-5"]))
+        XCTAssertEqual(s.sessions[key]?.model, "claude-opus-5")
+        _ = apply(&s, event("PostToolUse"))
+        XCTAssertEqual(s.sessions[key]?.model, "claude-opus-5", "an event without a model keeps the known one")
+    }
+
+    func testAnimationSeedIsStableAndDiffersPerSession() {
+        var s = SessionState()
+        _ = apply(&s, event("SessionStart", session: "a"))
+        _ = apply(&s, event("SessionStart", session: "b"))
+        let keyA = SessionKey(source: .claude, sessionID: "a")
+        let a1 = s.sessions[keyA]?.animationSeed
+        XCTAssertNotNil(a1)
+        _ = apply(&s, event("UserPromptSubmit", session: "a"))
+        XCTAssertEqual(s.sessions[keyA]?.animationSeed, a1)
+        XCTAssertNotEqual(a1, s.sessions[SessionKey(source: .claude, sessionID: "b")]?.animationSeed)
+    }
 }

@@ -67,6 +67,12 @@ public struct Session: Equatable {
     public var startedAt: Date
     public var lastEventAt: Date
     public var status: SessionStatus
+    /// When `status` last changed. Animation phases are measured from here, so a blink or a
+    /// bob starts when the state does rather than at an arbitrary global instant.
+    public var statusChangedAt: Date
+    /// Stable per-session value that de-phases animation between sessions.
+    public let animationSeed: UInt64
+    public var model: String?
     public var lastPrompt: String?
     public var lastAssistantMessage: String?
     public var currentTool: String?
@@ -79,9 +85,21 @@ public struct Session: Equatable {
         terminal = TerminalIdentity()
         self.startedAt = startedAt
         lastEventAt = startedAt
+        statusChangedAt = startedAt
+        animationSeed = Session.seed(for: key)
         status = .idle
         subagents = []
         pending = []
+    }
+
+    /// FNV-1a over the key, so the seed is stable across launches and platforms
+    /// (unlike `hashValue`, which is salted per process).
+    static func seed(for key: SessionKey) -> UInt64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in "\(key.source.rawValue):\(key.sessionID)".utf8 {
+            hash = (hash ^ UInt64(byte)) &* 0x1000_0000_01b3
+        }
+        return hash
     }
 }
 
