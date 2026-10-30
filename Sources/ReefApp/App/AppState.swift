@@ -23,6 +23,9 @@ final class AppState {
     /// Drives the staged content fade. Set false the instant the panel starts growing and true
     /// immediately after, so the header and rows fade in behind the growing frame (M3, M4).
     var contentRevealed = false
+    /// Claude Code's rate limits, when the status-line shim is feeding them.
+    var usage: UsageSnapshot?
+    @ObservationIgnored private var usageReader: UsageReader?
     @ObservationIgnored let sounds = SoundPlayer()
 
     var muted: Bool { get { settings.muted } set { settings.muted = newValue } }
@@ -68,9 +71,13 @@ final class AppState {
         housekeepingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.housekeeping() }
         }
+        let reader = UsageReader { [weak self] snapshot in self?.usage = snapshot }
+        reader.start()
+        usageReader = reader
     }
 
     func stop() {
+        usageReader?.stop()
         pending.releaseAll()
         server.stop()
         deadlineTimer?.invalidate()

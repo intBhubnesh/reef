@@ -17,6 +17,13 @@ public enum BridgeCLI {
 
     public static func run(arguments: [String], stdin: Data, env: [String: String], stdout: (Data) -> Void) -> Int32 {
         let paths = Paths(home: env["HOME"] ?? NSHomeDirectory())
+        // Status-line mode: Claude Code pipes its status payload in, Reef keeps the rate limits
+        // and echoes the input back untouched so the user's status line still renders.
+        if let index = arguments.firstIndex(of: "--task"), index + 1 < arguments.count,
+           arguments[index + 1] == "statusline-cache" {
+            statusLineCache(arguments: arguments, stdin: stdin, paths: paths, stdout: stdout)
+            return 0
+        }
         let subcommand = arguments.first.flatMap { $0.hasPrefix("--") ? nil : $0 }
         switch subcommand {
         case "install", "uninstall", "status":
@@ -60,6 +67,25 @@ public enum BridgeCLI {
               let data = try? JSONSerialization.data(withJSONObject: response.reply, options: [.sortedKeys])
         else { stdout(empty); return }
         stdout(data + "\n".data(using: .utf8)!)
+    }
+
+    /// Extracts `rate_limits` from the status-line payload into the cache the app polls.
+    /// Never fails the status line: whatever came in goes straight back out.
+    static func statusLineCache(arguments: [String], stdin: Data, paths: Paths, stdout: (Data) -> Void) {
+        defer { stdout(stdin) }
+        let cachePath: String
+        if let index = arguments.firstIndex(of: "--cache-file"), index + 1 < arguments.count {
+            cachePath = arguments[index + 1]
+        } else {
+            cachePath = paths.reefDir + "/cache/rl.json"
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: stdin), let json = object as? [String: Any],
+              let limits = json["rate_limits"], JSONSerialization.isValidJSONObject(limits),
+              let data = try? JSONSerialization.data(withJSONObject: limits)
+        else { return }
+        try? FileManager.default.createDirectory(atPath: (cachePath as NSString).deletingLastPathComponent,
+                                                 withIntermediateDirectories: true)
+        try? data.write(to: URL(fileURLWithPath: cachePath), options: .atomic)
     }
 
     /// The controlling terminal of the hook process, if any.

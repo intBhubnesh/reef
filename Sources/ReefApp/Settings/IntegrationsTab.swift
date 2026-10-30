@@ -24,6 +24,22 @@ struct IntegrationsTab: View {
                 }
             }
         }
+        SettingsGroup(title: "Usage limits") {
+            SettingsRow(title: "Claude Code status line", subtitle: statusLineSubtitle) {
+                switch StatusLineInstaller.state() {
+                case .free:
+                    Button("Install") { error = StatusLineInstaller.install(); refresh += 1 }
+                case .ownedByReef:
+                    HStack(spacing: 8) {
+                        Label("Installed", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+                        Button("Remove") { error = StatusLineInstaller.uninstall(); refresh += 1 }
+                    }
+                case .ownedByOther:
+                    Text("Owned by another app").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .id("statusline-\(refresh)")
+        }
         SettingsGroup(title: "Permissions") {
             SettingsRow(title: "Accessibility", subtitle: "Needed to focus the right Ghostty tab. Re-grant after rebuilding an ad hoc signed app.") {
                 if GhosttyAX.isTrusted {
@@ -39,6 +55,17 @@ struct IntegrationsTab: View {
             }
         }
         .id(refresh)
+    }
+
+    private var statusLineSubtitle: String {
+        switch StatusLineInstaller.state() {
+        case .free:
+            return "Lets Reef show your 5-hour and 7-day limits in the notch. Writes one line to ~/.claude/settings.json."
+        case .ownedByReef:
+            return "Reef reads your limits from Claude Code's status line."
+        case let .ownedByOther(command):
+            return "\(command) already provides it. Reef will not touch another app's status line; the header shows your sessions instead."
+        }
     }
 
     @ViewBuilder
