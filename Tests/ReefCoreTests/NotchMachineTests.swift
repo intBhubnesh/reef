@@ -76,6 +76,55 @@ final class NotchMachineTests: XCTestCase {
         XCTAssertEqual(m.apply(.requestsCleared(at(2))), .closed)
     }
 
+    // MARK: - Stage 2: transition kinds and peek suspension
+
+    func testHoverSuspendsACompletionPeekAndRestartsTheHold() {
+        var m = NotchMachine(timing: NotchTiming())
+        _ = m.apply(.taskComplete(at(0)))
+        _ = m.apply(.hoverEnter(at(1)))
+        XCTAssertEqual(m.apply(.tick(at(30))), .transient(kind: .completion, until: .distantFuture))
+        _ = m.apply(.hoverExit(at(31)))
+        XCTAssertEqual(m.apply(.tick(at(35.9))), .transient(kind: .completion, until: at(36)))
+        XCTAssertEqual(m.apply(.tick(at(36.1))), .closed)
+    }
+
+    func testPeekNeverReplacesABlockingPanel() {
+        var m = NotchMachine(timing: NotchTiming())
+        m.pendingCount = 1
+        _ = m.apply(.requestArrived(at(0)))
+        XCTAssertEqual(m.apply(.taskComplete(at(1))), .blocking)
+        XCTAssertEqual(m.apply(.tick(at(10))), .blocking)
+    }
+
+    func testTransitionKindFollowsTheIntent() {
+        var m = NotchMachine(timing: NotchTiming())
+        _ = m.apply(.hoverEnter(at(0))); _ = m.apply(.tick(at(0.2)))
+        XCTAssertEqual(m.lastTransition, .hoverExpand)
+        m.pendingCount = 1
+        _ = m.apply(.requestArrived(at(1)))
+        XCTAssertEqual(m.lastTransition, .requestExpand)
+        m.pendingCount = 0
+        _ = m.apply(.requestsCleared(at(2)))
+        XCTAssertEqual(m.lastTransition, .collapse)
+        _ = m.apply(.taskComplete(at(3)))
+        XCTAssertEqual(m.lastTransition, .peekExpand)
+    }
+
+    func testTransitionCurves() {
+        XCTAssertEqual(NotchTransition.collapse.damping, 1.0)
+        XCTAssertEqual(NotchTransition.hoverExpand.delay, Motion.hoverDwell)
+        XCTAssertEqual(NotchTransition.requestExpand.revealDuration, Motion.autoRevealFadeDuration)
+        XCTAssertEqual(NotchTransition.hoverExpand.revealDuration, Motion.headerFadeDuration)
+        XCTAssertEqual(NotchTransition.snap.response, 0)
+    }
+
+    func testFailurePeekAlsoSuspendsOnHover() {
+        var m = NotchMachine(timing: NotchTiming())
+        _ = m.apply(.taskFailed(at(0)))
+        _ = m.apply(.hoverEnter(at(1)))
+        XCTAssertEqual(m.apply(.tick(at(20))), .transient(kind: .failure, until: .distantFuture))
+    }
+
     func testNoAutoCollapseWhenSettingOff() {
         var timing = NotchTiming(); timing.autoCollapseOnLeave = false
         var m = NotchMachine(timing: timing)

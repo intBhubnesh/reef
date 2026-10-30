@@ -32,6 +32,8 @@ public struct NotchMachine: Equatable {
     public var timing: NotchTiming
     /// Number of live pending requests, maintained by the owner before sending request intents.
     public var pendingCount = 0
+    /// The motion that belongs to the most recent state change; the view reads this to pick its spring.
+    public private(set) var lastTransition: NotchTransition = .snap
 
     private var hoverDeadline: Date?
     private var hovering = false
@@ -47,6 +49,7 @@ public struct NotchMachine: Equatable {
 
     @discardableResult
     public mutating func apply(_ intent: NotchIntent) -> NotchState {
+        let before = state
         switch intent {
         case let .hoverEnter(now):
             hovering = true
@@ -55,13 +58,22 @@ public struct NotchMachine: Equatable {
                 hoverDeadline = now.addingTimeInterval(timing.hoverDelay)
             case .transient(kind: .hover, _):
                 state = .transient(kind: .hover, until: .distantFuture)
+            case let .transient(kind, _):
+                // A peek the pointer is reading stays open; its hold restarts on exit (M9).
+                state = .transient(kind: kind, until: .distantFuture)
             default: break
             }
         case let .hoverExit(now):
             hovering = false
             hoverDeadline = nil
-            if case .transient(kind: .hover, _) = state, timing.autoCollapseOnLeave {
-                state = .transient(kind: .hover, until: now.addingTimeInterval(timing.leaveCollapse))
+            switch state {
+            case .transient(kind: .hover, _):
+                if timing.autoCollapseOnLeave {
+                    state = .transient(kind: .hover, until: now.addingTimeInterval(timing.leaveCollapse))
+                }
+            case let .transient(kind, _):
+                state = .transient(kind: kind, until: now.addingTimeInterval(timing.revealDwell))
+            default: break
             }
         case .click:
             hoverDeadline = nil
@@ -87,7 +99,27 @@ public struct NotchMachine: Equatable {
             }
             if case let .transient(_, until) = state, now >= until { state = .closed }
         }
+        recordTransition(from: before, to: state, intent: intent)
         return state
+    }
+
+    /// Which motion the view should use for the change that just happened.
+    private mutating func recordTransition(from before: NotchState, to after: NotchState, intent: NotchIntent) {
+        guard before != after else { return }
+        if after == .closed {
+            lastTransition = .collapse
+            return
+        }
+        switch intent {
+        case .requestArrived: lastTransition = .requestExpand
+        case .taskComplete, .taskFailed: lastTransition = .peekExpand
+        case .click: lastTransition = .hoverExpand
+        case .tick, .hoverEnter, .hoverExit:
+            // A tick that opens the panel is the hover dwell firing; one that only moves a
+            // deadline is not a visible change at all.
+            lastTransition = before == .closed ? .hoverExpand : .snap
+        default: lastTransition = .snap
+        }
     }
 
     private var isTransient: Bool {
