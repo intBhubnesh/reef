@@ -31,6 +31,27 @@ final class NotchGeometryTests: XCTestCase {
         XCTAssertEqual(g.panelRect.height, 400 - 16)
     }
 
+    func testWindowRectAddsOvershootHeadroomAndFitsTheScreen() {
+        let g = NotchGeometry.compute(screen: screen, safeTop: 33,
+                                      auxLeft: CGRect(x: 0, y: 1074, width: 763, height: 33),
+                                      auxRight: CGRect(x: 948, y: 1074, width: 762, height: 33))
+        XCTAssertEqual(g.windowRect(expanded: false), g.pillRect)
+        let expanded = g.windowRect(expanded: true)
+        XCTAssertEqual(expanded.width, g.panelRect.width + Motion.overshootHeadroom * 2)
+        XCTAssertEqual(expanded.height, g.panelRect.height + Motion.overshootHeadroom)
+        XCTAssertGreaterThanOrEqual(expanded.minX, 0)
+        XCTAssertLessThanOrEqual(expanded.maxX, screen.width)
+    }
+
+    func testWindowRectClampsOnANarrowScreen() {
+        let g = NotchGeometry.compute(screen: CGRect(x: 0, y: 0, width: 600, height: 400), safeTop: 0, auxLeft: nil, auxRight: nil)
+        let expanded = g.windowRect(expanded: true)
+        XCTAssertGreaterThanOrEqual(expanded.minX, 0)
+        XCTAssertLessThanOrEqual(expanded.maxX, 600)
+        XCTAssertLessThanOrEqual(expanded.maxY, 400)
+        XCTAssertGreaterThan(expanded.width, 0)
+    }
+
     func testPillHeightNeverBelowThirtyThree() {
         let g = NotchGeometry.compute(screen: screen, safeTop: 20,
                                       auxLeft: CGRect(x: 0, y: 1087, width: 700, height: 20),

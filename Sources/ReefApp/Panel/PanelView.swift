@@ -6,10 +6,11 @@ import SwiftUI
 struct PanelView: View {
     @Environment(AppState.self) private var app
     let maxHeight: CGFloat
+    let namespace: Namespace.ID
 
     var body: some View {
         VStack(spacing: 0) {
-            HeaderRow()
+            HeaderRow(namespace: namespace)
                 .frame(height: Metrics.headerHeight)
                 .padding(.horizontal, Metrics.cardPadding)
 
@@ -28,7 +29,7 @@ struct PanelView: View {
                         if app.revealedKeys.contains(session.key), session.status == .done || session.status == .failed {
                             CompletionCardView(session: session)
                         } else {
-                            SessionCardView(session: session)
+                            SessionCardView(session: session, namespace: namespace)
                         }
                     }
                     if app.visibleSessions.isEmpty, app.notice == nil {

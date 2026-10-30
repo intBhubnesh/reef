@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsController: SettingsWindowController!
     private var hookWatcher: HookWatcher!
     private var hotkeys: GlobalHotkeys!
+    private var animation: AnimationSettings!
 
     private var termSource: DispatchSourceSignal?
 
@@ -35,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                     return controller.panel.frame.contains(NSEvent.mouseLocation)
                                 },
                                 perform: { [weak self] shortcut in self?.state.perform(shortcut) })
+        animation = AnimationSettings()
+        animation.onChange = { [weak self] value in self?.state.reduceMotion = value }
+        state.reduceMotion = animation.reduceMotion
         installMenu()
         state.start()
         notchController.show()

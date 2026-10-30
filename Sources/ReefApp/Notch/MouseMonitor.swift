@@ -31,8 +31,10 @@ final class MouseMonitor {
         } as Any)
     }
 
+    /// The drawn panel, not the oversized window: the overshoot headroom is empty space and
+    /// must not count as "the pointer is inside".
     private var hotRect: NSRect {
-        controller.isExpanded ? controller.panel.frame : controller.pillScreenRect
+        controller.isExpanded ? controller.panelScreenRect : controller.pillScreenRect
     }
 
     private func mouseMoved() {

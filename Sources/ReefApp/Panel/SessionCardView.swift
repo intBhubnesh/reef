@@ -4,11 +4,13 @@ import SwiftUI
 struct SessionCardView: View {
     @Environment(AppState.self) private var app
     let session: Session
+    var namespace: Namespace.ID?
 
     var body: some View {
         Button { app.jump(session: session) } label: {
             HStack(alignment: .top, spacing: 12) {
                 SessionSprite(session: session, cell: Metrics.rowSpriteWidth / CGFloat(Metrics.spriteColumns))
+                    .matchedGeometry(id: session.key, in: namespace)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(titleLine)

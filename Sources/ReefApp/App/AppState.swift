@@ -20,6 +20,9 @@ final class AppState {
     @ObservationIgnored var onSettingsChanged: (() -> Void)?
     /// Mirrors the system's "reduce motion" setting; stepped animation freezes when it is on.
     var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    /// Drives the staged content fade. Set false the instant the panel starts growing and true
+    /// immediately after, so the header and rows fade in behind the growing frame (M3, M4).
+    var contentRevealed = false
     @ObservationIgnored let sounds = SoundPlayer()
 
     var muted: Bool { get { settings.muted } set { settings.muted = newValue } }
@@ -387,8 +390,23 @@ final class AppState {
     }
 
     private func stateDidChange() {
+        syncContentReveal()
         scheduleTick()
         onStateChanged?()
+    }
+
+    /// Content is hidden while the panel is collapsed, and revealed one runloop turn after it
+    /// starts expanding so the fade has something to animate from.
+    private func syncContentReveal() {
+        let expanded = notch.state.isExpanded
+        if !expanded {
+            contentRevealed = false
+        } else if !contentRevealed {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.notch.state.isExpanded else { return }
+                self.contentRevealed = true
+            }
+        }
     }
 
     private func scheduleTick() {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HeaderRow: View {
+    let namespace: Namespace.ID
     @Environment(AppState.self) private var app
 
     var body: some View {

@@ -62,7 +62,10 @@ final class NotchWindowController {
     }
 
     var pillScreenRect: NSRect { Self.appKitRect(geometry.pillRect, in: screenFrame) }
+    /// The panel as drawn. Mouse tracking uses this, not the oversized window.
     var panelScreenRect: NSRect { Self.appKitRect(geometry.panelRect, in: screenFrame) }
+    /// The window, which carries slack for the expansion's overshoot.
+    var windowScreenRect: NSRect { Self.appKitRect(geometry.windowRect(expanded: expanded), in: screenFrame) }
     var isExpanded: Bool { expanded }
 
     func show() {
@@ -74,17 +77,18 @@ final class NotchWindowController {
         let screen = NSScreen.main ?? NSScreen.screens[0]
         screenFrame = screen.frame
         geometry = Self.geometry(for: screen, settings: state.settings)
-        panel.setFrame(expanded ? panelScreenRect : pillScreenRect, display: true)
+        panel.setFrame(windowScreenRect, display: true)
     }
 
-    /// Called after every state change: grow the window before expanding, shrink it after the collapse animation.
+    /// Grow the window before the spring starts, and shrink it only once the collapse has fully
+    /// settled: the measured tail runs to ~600 ms, so an earlier shrink would clip it.
     func refresh() {
         let shouldExpand = state.notch.state.isExpanded
         guard shouldExpand != expanded else { return }
         expanded = shouldExpand
         collapseWorkItem?.cancel()
         if shouldExpand {
-            panel.setFrame(panelScreenRect, display: true)
+            panel.setFrame(windowScreenRect, display: true)
             panel.makeKey()
         } else {
             let item = DispatchWorkItem { [weak self] in
@@ -92,7 +96,8 @@ final class NotchWindowController {
                 self.panel.setFrame(self.pillScreenRect, display: true)
             }
             collapseWorkItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
+            let settle = Motion.collapseResponse + Motion.windowShrinkExtra
+            DispatchQueue.main.asyncAfter(deadline: .now() + settle, execute: item)
         }
     }
 }
