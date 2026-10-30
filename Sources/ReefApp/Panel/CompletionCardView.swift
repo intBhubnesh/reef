@@ -24,9 +24,7 @@ struct CompletionCardView: View {
                     Chip(text: Format.elapsed(since: session.startedAt))
                 }
                 if let message = session.lastAssistantMessage, !message.isEmpty {
-                    Text(Format.markdown(message))
-                        .font(Theme.body)
-                        .foregroundStyle(Theme.textPrimary.opacity(0.9))
+                    MarkdownText(text: message)
                         .lineLimit(expanded ? nil : 3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if message.count > 180 || message.filter(\.isNewline).count >= 3 {

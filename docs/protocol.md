@@ -51,3 +51,7 @@ response {"v":1,"id":"<same>","reply":{...}}        (wait mode only; `{}` means 
 ## 5. Approvals follow focus
 
 When a `wait` request arrives and the session's terminal is frontmost (app match, plus the focused kitty window id when `kitten @ ls` can report it), Reef replies `{}` immediately and shows the card read-only. When a held request's terminal later becomes frontmost, Reef replies `{}` within the activation notification (measured ≈ 0.1 s).
+      ╱|、
+     (˚ˎ。7
+      |、˜〵
+   🧶 じしˍ,)ノ

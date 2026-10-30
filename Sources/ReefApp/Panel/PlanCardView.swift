@@ -15,11 +15,8 @@ struct PlanCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             CardHeader(session: session, badge: "Plan", badgeTint: Theme.accent, subtitle: "wants to leave plan mode")
             ScrollView {
-                Text(Format.markdown(plan))
-                    .font(Theme.body)
-                    .foregroundStyle(Theme.textPrimary.opacity(0.9))
+                MarkdownText(text: plan)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
             }
             .frame(maxHeight: 240)
