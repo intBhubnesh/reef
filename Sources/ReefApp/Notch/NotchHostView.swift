@@ -11,7 +11,7 @@ struct NotchHostView: View {
         let geometry = controller.geometry
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                NotchShape(bottomRadius: expanded ? Theme.panelRadius : Theme.pillRadius)
+                NotchShape(bottomRadius: expanded ? Metrics.panelBottomRadius : Metrics.pillBottomRadius)
                     .fill(Theme.panel)
                     .shadow(color: .black.opacity(expanded ? 0.45 : 0.25), radius: expanded ? 18 : 6, y: expanded ? 8 : 2)
                 if expanded {

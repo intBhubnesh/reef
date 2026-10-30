@@ -54,6 +54,6 @@ struct PillPreview: View {
             .padding(.trailing, 12)
         }
         .frame(width: 249, height: 33)
-        .background(NotchShape(bottomRadius: Theme.pillRadius).fill(Theme.panel))
+        .background(NotchShape(bottomRadius: Metrics.pillBottomRadius).fill(Theme.panel))
     }
 }
