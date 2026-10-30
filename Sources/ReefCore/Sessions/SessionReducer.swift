@@ -79,7 +79,10 @@ public enum SessionReducer {
             break
         }
 
-        if session.status != statusBefore { session.statusChangedAt = now }
+        if session.status != statusBefore {
+            session.statusChangedAt = now
+            if session.status.animationFamily != statusBefore.animationFamily { session.animationPhaseStart = now }
+        }
         state.sessions[key] = session
         return effects
     }

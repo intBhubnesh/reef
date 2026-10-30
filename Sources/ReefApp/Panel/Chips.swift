@@ -10,8 +10,8 @@ struct Chip: View {
         Text(text)
             .font(Theme.small.weight(.medium))
             .foregroundStyle(tint)
+            .frame(height: Metrics.chipHeight)
             .padding(.horizontal, 7)
-            .padding(.vertical, 3)
             .background(background, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }

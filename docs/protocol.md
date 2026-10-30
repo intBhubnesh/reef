@@ -51,7 +51,23 @@ response {"v":1,"id":"<same>","reply":{...}}        (wait mode only; `{}` means 
 ## 5. Approvals follow focus
 
 When a `wait` request arrives and the session's terminal is frontmost (app match, plus the focused kitty window id when `kitten @ ls` can report it), Reef replies `{}` immediately and shows the card read-only. When a held request's terminal later becomes frontmost, Reef replies `{}` within the activation notification (measured ≈ 0.1 s).
-      ╱|、
-     (˚ˎ。7
-      |、˜〵
-   🧶 じしˍ,)ノ
+
+## 6. Status-line shim (optional)
+
+Claude Code has exactly one `statusLine` slot, so Reef claims it only when nobody else holds it.
+
+**States.** `StatusLineState.of(command:)` reads `statusLine.command` from `~/.claude/settings.json` and reports:
+
+| State | Meaning | What Reef does |
+|---|---|---|
+| `free` | no `statusLine` key | Settings offers Install |
+| `ownedByReef` | command contains `/.reef/bin/reef-statusline` | Settings offers Remove |
+| `ownedByOther(cmd)` | anything else | Writes nothing; Settings names `cmd` and the header falls back to the session count |
+
+**What Install writes.** A shell script at `~/.reef/bin/reef-statusline` that execs `reef-bridge --task statusline-cache --cache-file ~/.reef/cache/rl.json`, plus the `statusLine` key pointing at it. Nothing else in the settings file is touched, and a timestamped backup is taken first.
+
+**What the shim does.** It reads the status payload Claude Code sends on stdin, writes that payload's `rate_limits` object to the cache, and **prints nothing**. Claude Code renders a status-line command's stdout, so echoing the payload back would print raw session JSON under every prompt. An empty status line is the correct output for a shim whose only job is to observe. Malformed or missing input is ignored silently; the status line never fails because of Reef.
+
+**What the app reads.** `UsageReader` polls the cache every 30 s. Staleness is measured from the cache file's modification time, so a reading older than 10 minutes renders grey rather than passing as live.
+
+**Removing Reef.** Use Settings → Integrations → Remove before deleting the app. Deleting the app alone leaves `statusLine` pointing at a script that no longer exists, and Claude Code will show an empty status line until the key is removed by hand.

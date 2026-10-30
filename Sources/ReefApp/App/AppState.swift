@@ -186,11 +186,11 @@ final class AppState {
                 notch.apply(.requestsCleared(now))
             case let .revealCompletion(key):
                 revealedKeys.insert(key)
-                notch.apply(.taskComplete(now))
+                schedulePeek { [weak self] in self?.notch.apply(.taskComplete(Date())) }
                 notifyIfAllFinished()
             case let .revealFailure(key):
                 revealedKeys.insert(key)
-                notch.apply(.taskFailed(now))
+                schedulePeek { [weak self] in self?.notch.apply(.taskFailed(Date())) }
             case let .sound(kind):
                 let enabled = settings.soundEnabled(kind)
                 Log.info("sound", kind.rawValue, ["played": enabled ? "1" : "0"])
@@ -224,6 +224,20 @@ final class AppState {
             content.body = "No agent is working anymore."
             center.add(UNNotificationRequest(identifier: "reef.all-finished", content: content, trigger: nil))
         }
+    }
+
+    /// A completion peek opens a beat after the panel settles rather than the instant the turn
+    /// ends (M8), so finishing reads as a separate event instead of a jump.
+    @ObservationIgnored private var peekWorkItem: DispatchWorkItem?
+
+    private func schedulePeek(_ body: @escaping () -> Void) {
+        peekWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            body()
+            self?.stateDidChange()
+        }
+        peekWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + Motion.peekDelay, execute: item)
     }
 
     private func syncPendingCount() {

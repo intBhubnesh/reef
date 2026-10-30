@@ -72,15 +72,27 @@ public enum SpriteAnimator {
 
     /// The eyes jump on an irregular schedule so two waiting agents never move in lockstep.
     /// Gaps come from a seeded generator, so the same session always animates the same way.
+    /// Number of gaps in one repeat of the schedule. An agent can wait for hours, so the
+    /// schedule wraps instead of being replayed from zero: the cost is the same at any age.
+    static let waitEyeCycleSteps = 64
+
     private static func eyesOpenWhileWaiting(t: TimeInterval, seed: UInt64) -> Bool {
         var state = seed &* 0x9E37_79B9_7F4A_7C15 | 1
-        var boundary: TimeInterval = 0
-        var open = true
         let span = Motion.waitEyeMaxGap - Motion.waitEyeMinGap
-        // The schedule is replayed from zero each call; a waiting state is short-lived and
-        // the loop costs a few dozen iterations per frame at most.
-        while boundary <= t {
-            boundary += Motion.waitEyeMinGap + span * nextUnit(&state)
+        var gaps: [TimeInterval] = []
+        gaps.reserveCapacity(waitEyeCycleSteps)
+        var total: TimeInterval = 0
+        for _ in 0..<waitEyeCycleSteps {
+            let gap = Motion.waitEyeMinGap + span * nextUnit(&state)
+            gaps.append(gap)
+            total += gap
+        }
+        // An even number of toggles per repeat keeps the pattern continuous across wraps.
+        var remaining = t.truncatingRemainder(dividingBy: total)
+        var open = true
+        for gap in gaps {
+            if remaining < gap { break }
+            remaining -= gap
             open.toggle()
         }
         return open

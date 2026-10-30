@@ -11,7 +11,7 @@ struct SessionSprite: View {
     var body: some View {
         CharacterSprite(status: session.status,
                         seed: session.animationSeed,
-                        phaseStart: session.statusChangedAt,
+                        phaseStart: session.animationPhaseStart,
                         cell: cell,
                         reduceMotion: app.reduceMotion)
     }

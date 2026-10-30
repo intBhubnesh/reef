@@ -9,6 +9,20 @@ public struct SessionKey: Hashable, Codable {
 public enum SessionStatus: Equatable {
     case idle, working, runningTool(String), waitingForApproval, waitingForQuestion, waitingForPlan, done, failed, compacting
 
+    /// Statuses that share one sprite behaviour. A busy agent changes status several times a
+    /// second as tools start and stop; the animation phase must follow the family, not the
+    /// status, or the character restarts its cycle constantly and appears frozen.
+    public enum AnimationFamily: Equatable { case working, waiting, done, failed }
+
+    public var animationFamily: AnimationFamily {
+        switch self {
+        case .idle, .working, .runningTool, .compacting: return .working
+        case .waitingForApproval, .waitingForQuestion, .waitingForPlan: return .waiting
+        case .done: return .done
+        case .failed: return .failed
+        }
+    }
+
     public var isWaitingOnUser: Bool {
         switch self {
         case .waitingForApproval, .waitingForQuestion, .waitingForPlan: return true
@@ -70,6 +84,9 @@ public struct Session: Equatable {
     /// When `status` last changed. Animation phases are measured from here, so a blink or a
     /// bob starts when the state does rather than at an arbitrary global instant.
     public var statusChangedAt: Date
+    /// When the sprite's behaviour last changed. Unlike `statusChangedAt` this survives tool
+    /// churn, so the animation keeps running while an agent works.
+    public var animationPhaseStart: Date
     /// Stable per-session value that de-phases animation between sessions.
     public let animationSeed: UInt64
     public var model: String?
@@ -86,6 +103,7 @@ public struct Session: Equatable {
         self.startedAt = startedAt
         lastEventAt = startedAt
         statusChangedAt = startedAt
+        animationPhaseStart = startedAt
         animationSeed = Session.seed(for: key)
         status = .idle
         subagents = []

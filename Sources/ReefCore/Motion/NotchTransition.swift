@@ -14,11 +14,12 @@ public enum NotchTransition: Equatable {
     /// Content changed while the panel was open (M11): no animation at all.
     case snap
 
+    /// Delay before the frame starts moving. `hoverExpand` is zero because `NotchMachine`
+    /// already waited the dwell before the state changed; adding it here would double it.
     public var delay: TimeInterval {
         switch self {
-        case .hoverExpand: return Motion.hoverDwell
         case .requestExpand: return Motion.requestExpandDelay
-        case .peekExpand, .collapse, .snap: return 0
+        case .hoverExpand, .peekExpand, .collapse, .snap: return 0
         }
     }
 

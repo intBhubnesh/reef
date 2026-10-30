@@ -112,7 +112,9 @@ final class NotchMachineTests: XCTestCase {
 
     func testTransitionCurves() {
         XCTAssertEqual(NotchTransition.collapse.damping, 1.0)
-        XCTAssertEqual(NotchTransition.hoverExpand.delay, Motion.hoverDwell)
+        // The dwell belongs to the machine, which has already waited it by the time the state
+        // changes; the view must not delay again. See testHoverDwellIsNotAppliedTwice.
+        XCTAssertEqual(NotchTransition.hoverExpand.delay, 0)
         XCTAssertEqual(NotchTransition.requestExpand.revealDuration, Motion.autoRevealFadeDuration)
         XCTAssertEqual(NotchTransition.hoverExpand.revealDuration, Motion.headerFadeDuration)
         XCTAssertEqual(NotchTransition.snap.response, 0)

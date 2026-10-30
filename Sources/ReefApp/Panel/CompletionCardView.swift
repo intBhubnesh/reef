@@ -37,7 +37,7 @@ struct CompletionCardView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
+            .background(Theme.completionCard, in: RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous)
                 .stroke((failed ? Theme.failed : Theme.done).opacity(0.4)))
             .contentShape(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))

@@ -43,7 +43,8 @@ struct PanelView: View {
                 .frame(width: Metrics.contentWidth)
                 .padding(.bottom, Metrics.bottomInset)
             }
-            .fixedSize(horizontal: false, vertical: true)
+            // No fixedSize: that would make the scroll view adopt its content's full height and
+            // clip instead of scrolling once several sessions are open.
             .frame(maxHeight: maxHeight - Metrics.headerHeight - Metrics.bottomInset)
         }
         .frame(maxWidth: .infinity, alignment: .top)

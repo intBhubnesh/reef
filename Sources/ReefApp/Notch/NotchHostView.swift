@@ -24,9 +24,13 @@ struct NotchHostView: View {
                     .shadow(color: .black.opacity(expanded ? 0.45 : 0.25),
                             radius: expanded ? 18 : 6, y: expanded ? 8 : 2)
                 if expanded {
+                    // Header and rows reveal on their own beats (M3, M4): the header fades in
+                    // place, the rows follow slightly later and drift down as they arrive.
                     PanelView(maxHeight: geometry.panelRect.height, namespace: island)
                         .opacity(app.contentRevealed ? 1 : 0)
+                        .animation(transition.reveal(reduceMotion: reduce, row: false), value: app.contentRevealed)
                         .offset(y: app.contentRevealed ? 0 : -Motion.rowDrift)
+                        .animation(transition.reveal(reduceMotion: reduce, row: true), value: app.contentRevealed)
                 } else {
                     PillView(namespace: island)
                         .frame(height: geometry.pillRect.height)
@@ -42,6 +46,5 @@ struct NotchHostView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(transition.animation(reduceMotion: reduce), value: expanded)
-        .animation(transition.reveal(reduceMotion: reduce, row: false), value: app.contentRevealed)
     }
 }

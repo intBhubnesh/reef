@@ -70,9 +70,9 @@ public enum BridgeCLI {
     }
 
     /// Extracts `rate_limits` from the status-line payload into the cache the app polls.
-    /// Never fails the status line: whatever came in goes straight back out.
+    /// Prints nothing: Claude Code renders this command's stdout as the user's status line, and
+    /// echoing the payload back would print raw session JSON under every prompt.
     static func statusLineCache(arguments: [String], stdin: Data, paths: Paths, stdout: (Data) -> Void) {
-        defer { stdout(stdin) }
         let cachePath: String
         if let index = arguments.firstIndex(of: "--cache-file"), index + 1 < arguments.count {
             cachePath = arguments[index + 1]
