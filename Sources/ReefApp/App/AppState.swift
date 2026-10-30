@@ -18,6 +18,8 @@ final class AppState {
         }
     }
     @ObservationIgnored var onSettingsChanged: (() -> Void)?
+    /// Mirrors the system's "reduce motion" setting; stepped animation freezes when it is on.
+    var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     @ObservationIgnored let sounds = SoundPlayer()
 
     var muted: Bool { get { settings.muted } set { settings.muted = newValue } }

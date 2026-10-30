@@ -10,7 +10,7 @@ struct PillView: View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
                 ForEach(sessions, id: \.key) { session in
-                    SpriteView(source: session.key.source, status: session.status)
+                    SessionSprite(session: session, cell: Metrics.pillSpriteSize / CGFloat(Metrics.spriteColumns))
                 }
             }
             .padding(.leading, 12)

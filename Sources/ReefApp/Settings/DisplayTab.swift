@@ -42,8 +42,8 @@ struct PillPreview: View {
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
-                SpriteView(source: .claude, status: .working)
-                SpriteView(source: .codex, status: .waitingForApproval)
+                CharacterSprite(status: .working, seed: 1, phaseStart: .now, cell: 2)
+                CharacterSprite(status: .waitingForApproval, seed: 2, phaseStart: .now, cell: 2)
             }
             .padding(.leading, 12)
             Spacer(minLength: 8)

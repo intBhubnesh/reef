@@ -8,7 +8,7 @@ struct SessionCardView: View {
     var body: some View {
         Button { app.jump(session: session) } label: {
             HStack(alignment: .top, spacing: 12) {
-                SpriteView(source: session.key.source, status: session.status, pixel: 4)
+                SessionSprite(session: session, cell: Metrics.rowSpriteWidth / CGFloat(Metrics.spriteColumns))
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(titleLine)

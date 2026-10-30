@@ -12,13 +12,17 @@ public struct SpriteFrame: Equatable {
 
     public let bodyFrame: Int
     public let eyesOpen: Bool
+    /// Horizontal eye position in cells: -1, 0 or 1. The eyes move on every step so the
+    /// character changes visibly at 150 ms, while the body only changes every fourth (M12).
+    public let eyeShift: Int
     public let glyph: Glyph?
     public let glyphRaised: Bool
     public let cursorOn: Bool
 
-    public init(bodyFrame: Int, eyesOpen: Bool, glyph: Glyph?, glyphRaised: Bool, cursorOn: Bool) {
+    public init(bodyFrame: Int, eyesOpen: Bool, eyeShift: Int = 0, glyph: Glyph?, glyphRaised: Bool, cursorOn: Bool) {
         self.bodyFrame = bodyFrame
         self.eyesOpen = eyesOpen
+        self.eyeShift = eyeShift
         self.glyph = glyph
         self.glyphRaised = glyphRaised
         self.cursorOn = cursorOn
@@ -35,7 +39,9 @@ public enum SpriteAnimator {
         switch status {
         case .idle, .working, .runningTool, .compacting:
             let step = reduceMotion ? 0 : Int(t / Motion.spriteFramePeriod) % Motion.spriteCycleFrames
-            return SpriteFrame(bodyFrame: step, eyesOpen: true, glyph: nil, glyphRaised: false, cursorOn: false)
+            return SpriteFrame(bodyFrame: step, eyesOpen: true,
+                               eyeShift: reduceMotion ? 0 : Self.lookCycle[step % Self.lookCycle.count],
+                               glyph: nil, glyphRaised: false, cursorOn: false)
 
         case .waitingForApproval, .waitingForQuestion, .waitingForPlan:
             guard !reduceMotion else {
@@ -59,6 +65,10 @@ public enum SpriteAnimator {
             return SpriteFrame(bodyFrame: 0, eyesOpen: false, glyph: nil, glyphRaised: false, cursorOn: false)
         }
     }
+
+    /// Where the eyes look on each step. No two neighbours match, so every 150 ms step
+    /// changes the drawn frame; the pattern returns to centre at the end of the cycle.
+    static let lookCycle = [0, 1, 0, -1]
 
     /// The eyes jump on an irregular schedule so two waiting agents never move in lockstep.
     /// Gaps come from a seeded generator, so the same session always animates the same way.

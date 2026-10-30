@@ -15,6 +15,17 @@ final class SpriteAnimatorTests: XCTestCase {
         XCTAssertTrue(f(.idle, 0.5).eyesOpen)
     }
 
+    func testWorkingEyesMoveEveryStepSoSomethingChangesAt150ms() {
+        // M12: the eyes move every step and the body only every fourth, so a working agent
+        // must look different on every 150 ms frame, not every 600 ms.
+        let frames = (0..<8).map { f(.working, Double($0) * 0.15 + 0.01) }
+        for i in 0..<7 {
+            XCTAssertNotEqual(frames[i], frames[i + 1], "step \(i) and \(i + 1) look identical")
+        }
+        XCTAssertEqual(Set(frames.map(\.eyeShift)).count, 3, "eyes use three positions")
+        XCTAssertEqual(f(.working, 0.01).eyeShift, f(.working, 1.21).eyeShift, "the cycle repeats at 1.2 s")
+    }
+
     func testRunningToolAndCompactingUseTheWorkingCycle() {
         XCTAssertEqual(f(.runningTool("Bash"), 0.451).bodyFrame, 3)
         XCTAssertEqual(f(.compacting, 0.451).bodyFrame, 3)

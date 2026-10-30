@@ -94,7 +94,7 @@ struct CardHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            SpriteView(source: session.key.source, status: session.status, pixel: 3)
+            SessionSprite(session: session, cell: 2.5)
             Text(session.project ?? AgentLabel.name(session.key.source))
                 .font(Theme.body.weight(.semibold)).foregroundStyle(Theme.textPrimary).lineLimit(1)
             Text(subtitle).font(Theme.body).foregroundStyle(Theme.textSecondary)
