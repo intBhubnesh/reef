@@ -96,6 +96,7 @@ public struct Session: Equatable {
     public var subagents: [Subagent]
     public var pending: [PendingRequest]
     public var elapsedToolStart: Date?
+    public var ingress: SessionIngress = .hook
 
     public init(key: SessionKey, startedAt: Date) {
         self.key = key
@@ -120,6 +121,10 @@ public struct Session: Equatable {
         return hash
     }
 }
+
+/// How Reef learned about a session. Hook sessions can be approved from the notch; transcript
+/// sessions are a read-only record of a front end that does not run hooks, such as VS Code.
+public enum SessionIngress: String, Codable, Equatable { case hook, transcript }
 
 public enum SoundKind: String, Codable { case inputNeeded, done, failed }
 

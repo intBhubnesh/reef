@@ -104,6 +104,47 @@ public enum SessionReducer {
         state.sessions[key] = session
     }
 
+    /// Creates or updates a session read from a transcript. Hooks win: when a session with this
+    /// key already arrived through hooks the transcript is ignored entirely, because the hook
+    /// path carries approvals and the transcript cannot.
+    @discardableResult
+    public static func upsertWatched(_ state: inout SessionState, _ transcript: TranscriptSession,
+                                     key: SessionKey, now: Date) -> [SessionEffect] {
+        if let existing = state.sessions[key], existing.ingress == .hook { return [] }
+
+        var session = state.sessions[key] ?? Session(key: key, startedAt: transcript.startedAt)
+        let wasDone = session.status == .done
+        session.ingress = .transcript
+        session.lastEventAt = transcript.lastActivityAt
+        session.cwd = transcript.cwd
+        if let cwd = transcript.cwd { session.project = URL(fileURLWithPath: cwd).lastPathComponent }
+        session.model = transcript.model
+        session.lastAssistantMessage = transcript.lastAssistantMessage
+        // A watched session is reachable in its editor, so the jump engine opens VS Code there.
+        session.terminal = TerminalIdentity(bundleID: JumpPlanner.vscodeBundle)
+        let status: SessionStatus = transcript.isWorking ? .working : .done
+        if session.status != status {
+            session.statusChangedAt = now
+            if session.status.animationFamily != status.animationFamily { session.animationPhaseStart = now }
+            session.status = status
+        }
+        state.sessions[key] = session
+
+        guard status == .done, !wasDone else { return [] }
+        return [.revealCompletion(key), .sound(.done)]
+    }
+
+    /// Drops every transcript-sourced session, for when the user turns watching off.
+    @discardableResult
+    public static func removeWatched(_ state: inout SessionState) -> [SessionEffect] {
+        var effects: [SessionEffect] = []
+        for (key, session) in state.sessions where session.ingress == .transcript {
+            state.sessions[key] = nil
+            effects.append(.removed(key))
+        }
+        return effects
+    }
+
     public static func pruneIdle(_ state: inout SessionState, now: Date, maxIdle: TimeInterval) -> [SessionEffect] {
         var effects: [SessionEffect] = []
         for (key, session) in state.sessions where now.timeIntervalSince(session.lastEventAt) > maxIdle && session.pending.isEmpty {

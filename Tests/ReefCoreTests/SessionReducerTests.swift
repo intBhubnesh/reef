@@ -191,6 +191,67 @@ final class SessionReducerTests: XCTestCase {
         XCTAssertEqual(s.sessions[key]?.model, "claude-opus-5", "an event without a model keeps the known one")
     }
 
+    // MARK: - Watched (transcript) sessions
+
+    private func codexEvent(_ name: String, session: String) -> HookEvent {
+        event(name, source: .codex, session: session)
+    }
+
+    private func transcript(_ id: String, cwd: String = "/tmp/proj", model: String? = "gpt-5.6-sol",
+                            working: Bool = true, message: String? = nil, turns: Int = 1) -> TranscriptSession {
+        TranscriptSession(id: id, cwd: cwd, originator: "codex_vscode", model: model, isWorking: working,
+                          lastAssistantMessage: message, startedAt: t0, lastActivityAt: t0, turnCount: turns)
+    }
+
+    func testWatchedSessionAppearsAndTracksTurns() {
+        var s = SessionState()
+        var t = transcript("w1")
+        let key = SessionKey(source: .codex, sessionID: "w1")
+        _ = SessionReducer.upsertWatched(&s, t, key: key, now: t0)
+        XCTAssertEqual(s.sessions[key]?.status, .working)
+        XCTAssertEqual(s.sessions[key]?.ingress, .transcript)
+        XCTAssertEqual(s.sessions[key]?.project, "proj")
+        XCTAssertEqual(s.sessions[key]?.model, "gpt-5.6-sol")
+        XCTAssertEqual(s.sessions[key]?.terminal.bundleID, JumpPlanner.vscodeBundle, "clicking it focuses VS Code")
+        t.isWorking = false
+        t.lastAssistantMessage = "Done."
+        let effects = SessionReducer.upsertWatched(&s, t, key: key, now: t0.addingTimeInterval(5))
+        XCTAssertEqual(s.sessions[key]?.status, .done)
+        XCTAssertEqual(s.sessions[key]?.lastAssistantMessage, "Done.")
+        XCTAssertTrue(effects.contains(.revealCompletion(key)))
+        let again = SessionReducer.upsertWatched(&s, t, key: key, now: t0.addingTimeInterval(6))
+        XCTAssertFalse(again.contains(.revealCompletion(key)), "a finished session reveals once, not on every poll")
+    }
+
+    func testHookSessionIsNeverOverwrittenByATranscript() {
+        var s = SessionState()
+        let key = SessionKey(source: .codex, sessionID: "dup")
+        _ = apply(&s, codexEvent("UserPromptSubmit", session: "dup"))
+        let before = s.sessions[key]
+        let t = transcript("dup", cwd: "/tmp/other", model: nil, working: false, message: "x", turns: 9)
+        XCTAssertEqual(SessionReducer.upsertWatched(&s, t, key: key, now: t0), [])
+        XCTAssertEqual(s.sessions[key], before, "hooks win; they carry approvals")
+        XCTAssertEqual(s.sessions.count, 1)
+    }
+
+    func testRemoveWatchedLeavesHookSessions() {
+        var s = SessionState()
+        _ = apply(&s, codexEvent("SessionStart", session: "hooked"))
+        _ = SessionReducer.upsertWatched(&s, transcript("w"), key: SessionKey(source: .codex, sessionID: "w"), now: t0)
+        XCTAssertEqual(s.sessions.count, 2)
+        let effects = SessionReducer.removeWatched(&s)
+        XCTAssertEqual(s.sessions.count, 1)
+        XCTAssertEqual(effects.count, 1)
+        XCTAssertEqual(s.sessions.values.first?.ingress, .hook)
+    }
+
+    func testWatchedSessionsNeverCarryPendingRequests() {
+        var s = SessionState()
+        let key = SessionKey(source: .codex, sessionID: "w2")
+        _ = SessionReducer.upsertWatched(&s, transcript("w2"), key: key, now: t0)
+        XCTAssertTrue(s.sessions[key]?.pending.isEmpty ?? false, "a transcript cannot answer an approval")
+    }
+
     func testAnimationSeedIsStableAndDiffersPerSession() {
         var s = SessionState()
         _ = apply(&s, event("SessionStart", session: "a"))
