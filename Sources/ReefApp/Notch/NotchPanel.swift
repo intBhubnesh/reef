@@ -86,6 +86,7 @@ final class NotchWindowController {
         let shouldExpand = state.notch.state.isExpanded
         guard shouldExpand != expanded else { return }
         expanded = shouldExpand
+        Log.info("notch", shouldExpand ? "expand" : "collapse", ["transition": "\(state.notch.lastTransition)"])
         collapseWorkItem?.cancel()
         if shouldExpand {
             panel.setFrame(windowScreenRect, display: true)

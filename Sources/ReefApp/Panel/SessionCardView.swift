@@ -13,7 +13,7 @@ struct SessionCardView: View {
                 // L4: the character is centred on the first two text lines, not the whole row,
                 // so it stays beside the title when subagents push the card taller.
                 SessionSprite(session: session, cell: Metrics.rowSpriteWidth / CGFloat(Metrics.spriteColumns))
-                    .matchedGeometry(id: session.key, in: namespace)
+                    .matchedGeometry(id: session.key, in: namespace, isSource: app.notch.state.isExpanded)
                     // L4: one fixed-width gutter, so the text column lands at the measured
                     // inset on every row regardless of what the sprite draws.
                     .frame(width: Metrics.textColumn - Metrics.cardPadding,

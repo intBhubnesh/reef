@@ -7,6 +7,9 @@ import SwiftUI
 struct PillView: View {
     @Environment(AppState.self) private var app
     let namespace: Namespace.ID
+    /// The pill and the panel are both mounted during a transition, so exactly one of them owns
+    /// each sprite's geometry: the pill while the island is closed, the cards once it is open.
+    var spriteIsSource = true
 
     var body: some View {
         let sessions = app.visibleSessions
@@ -14,7 +17,7 @@ struct PillView: View {
             HStack(spacing: Metrics.pillSpriteGap) {
                 ForEach(sessions, id: \.key) { session in
                     SessionSprite(session: session, cell: Metrics.pillSpriteSize / CGFloat(Metrics.spriteColumns))
-                        .matchedGeometryEffect(id: session.key, in: namespace)
+                        .matchedGeometryEffect(id: session.key, in: namespace, isSource: spriteIsSource)
                 }
             }
             .padding(.leading, Metrics.pillSideInset)
@@ -40,7 +43,7 @@ extension View {
     /// Applies a matched-geometry id when a namespace is available, so the same card view can
     /// be used inside and outside the morphing island.
     @ViewBuilder
-    func matchedGeometry(id: some Hashable, in namespace: Namespace.ID?) -> some View {
-        if let namespace { matchedGeometryEffect(id: id, in: namespace) } else { self }
+    func matchedGeometry(id: some Hashable, in namespace: Namespace.ID?, isSource: Bool = true) -> some View {
+        if let namespace { matchedGeometryEffect(id: id, in: namespace, isSource: isSource) } else { self }
     }
 }
