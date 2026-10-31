@@ -7,9 +7,16 @@ struct IntegrationsTab: View {
     @State private var error: String?
 
     var body: some View {
+        @Bindable var app = app
         SettingsGroup(title: "Agents") {
             agentRow(.claude, name: "Claude Code", file: "~/.claude/settings.json")
             agentRow(.codex, name: "Codex", file: "~/.codex/hooks.json")
+        }
+        SettingsGroup(title: "Other editors") {
+            SettingsRow(title: "Watch Codex sessions from other editors",
+                        subtitle: "VS Code's Codex does not run hooks, so Reef reads its transcripts instead. Those sessions are read-only: approvals happen in the editor.") {
+                Toggle("", isOn: $app.settings.watchCodexTranscripts).labelsHidden().toggleStyle(.switch)
+            }
         }
         if let error {
             Text(error).font(.caption).foregroundStyle(.red)

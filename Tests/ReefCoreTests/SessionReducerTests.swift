@@ -234,6 +234,16 @@ final class SessionReducerTests: XCTestCase {
         XCTAssertEqual(s.sessions.count, 1)
     }
 
+    func testAHookEventTakesOverAWatchedSession() {
+        var s = SessionState()
+        let key = SessionKey(source: .codex, sessionID: "takeover")
+        _ = SessionReducer.upsertWatched(&s, transcript("takeover"), key: key, now: t0)
+        XCTAssertEqual(s.sessions[key]?.ingress, .transcript)
+        _ = apply(&s, codexEvent("UserPromptSubmit", session: "takeover"))
+        XCTAssertEqual(s.sessions[key]?.ingress, .hook, "once hooks fire the session is live, not read-only")
+        XCTAssertEqual(s.sessions.count, 1)
+    }
+
     func testRemoveWatchedLeavesHookSessions() {
         var s = SessionState()
         _ = apply(&s, codexEvent("SessionStart", session: "hooked"))

@@ -16,6 +16,8 @@ enum Paths {
     static let claudeSettings = home.appendingPathComponent(".claude/settings.json").path
     static let codexHooks = home.appendingPathComponent(".codex/hooks.json").path
     static let codexConfig = home.appendingPathComponent(".codex/config.toml").path
+    /// Where Codex writes a transcript per session, whatever front end it runs in.
+    static let codexSessions = home.appendingPathComponent(".codex/sessions")
 
     static func ensureDirectories() {
         for dir in [binDir, runDir, cacheDir, supportDir, logDir] {

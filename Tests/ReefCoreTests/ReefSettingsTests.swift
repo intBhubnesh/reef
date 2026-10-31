@@ -37,6 +37,15 @@ final class ReefSettingsTests: XCTestCase {
         XCTAssertEqual(t.leaveCollapse, 1)
     }
 
+    func testWatchCodexTranscriptsDefaultsOnAndRoundTrips() throws {
+        XCTAssertTrue(ReefSettings().watchCodexTranscripts)
+        var s = ReefSettings()
+        s.watchCodexTranscripts = false
+        let url = tempURL()
+        try s.save(to: url)
+        XCTAssertFalse(ReefSettings.load(from: url).watchCodexTranscripts)
+    }
+
     func testCorruptFileFallsBackToDefaults() throws {
         let url = tempURL()
         try "{not json".data(using: .utf8)!.write(to: url)

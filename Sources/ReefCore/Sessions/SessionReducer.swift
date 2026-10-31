@@ -6,6 +6,8 @@ public enum SessionReducer {
         let key = SessionKey(source: event.source, sessionID: event.sessionID)
         var session = state.sessions[key] ?? Session(key: key, startedAt: now)
         session.lastEventAt = now
+        // A session the watcher found first becomes live the moment its hooks fire.
+        session.ingress = .hook
         applyIdentity(&session, from: event)
         let statusBefore = session.status
         var effects: [SessionEffect] = []

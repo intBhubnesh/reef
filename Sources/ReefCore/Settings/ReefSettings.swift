@@ -19,6 +19,9 @@ public struct ReefSettings: Codable, Equatable {
     public var showBranch = true
     public var showSubagents = true
     public var showHeadless = false
+    /// Watch `~/.codex/sessions` so Codex front ends that do not run hooks, such as the VS Code
+    /// extension, still appear. Those sessions are read-only.
+    public var watchCodexTranscripts = true
     public var hooksInstalledByUser: [String] = []
 
     public init() {}
@@ -43,6 +46,7 @@ public struct ReefSettings: Codable, Equatable {
         showBranch = try c.decodeIfPresent(Bool.self, forKey: .showBranch) ?? d.showBranch
         showSubagents = try c.decodeIfPresent(Bool.self, forKey: .showSubagents) ?? d.showSubagents
         showHeadless = try c.decodeIfPresent(Bool.self, forKey: .showHeadless) ?? d.showHeadless
+        watchCodexTranscripts = try c.decodeIfPresent(Bool.self, forKey: .watchCodexTranscripts) ?? d.watchCodexTranscripts
         hooksInstalledByUser = try c.decodeIfPresent([String].self, forKey: .hooksInstalledByUser) ?? d.hooksInstalledByUser
     }
 

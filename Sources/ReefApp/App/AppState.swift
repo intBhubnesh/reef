@@ -14,6 +14,7 @@ final class AppState {
             guard settings != oldValue else { return }
             notch.timing = settings.notchTiming
             try? settings.save(to: Paths.settingsFile)
+            if settings.watchCodexTranscripts != oldValue.watchCodexTranscripts { syncCodexWatcher() }
             onSettingsChanged?()
         }
     }
@@ -26,6 +27,7 @@ final class AppState {
     /// Claude Code's rate limits, when the status-line shim is feeding them.
     var usage: UsageSnapshot?
     @ObservationIgnored private var usageReader: UsageReader?
+    @ObservationIgnored private var codexWatcher: CodexTranscriptWatcher?
     @ObservationIgnored let sounds = SoundPlayer()
 
     var muted: Bool { get { settings.muted } set { settings.muted = newValue } }
@@ -74,9 +76,37 @@ final class AppState {
         let reader = UsageReader { [weak self] snapshot in self?.usage = snapshot }
         reader.start()
         usageReader = reader
+        syncCodexWatcher()
+    }
+
+    /// Starts or stops transcript watching to match the setting, clearing watched sessions when
+    /// it is turned off so the island reflects the choice immediately.
+    func syncCodexWatcher() {
+        if settings.watchCodexTranscripts {
+            guard codexWatcher == nil else { return }
+            let watcher = CodexTranscriptWatcher(root: Paths.codexSessions) { [weak self] transcript in
+                self?.applyWatched(transcript)
+            }
+            watcher.start()
+            codexWatcher = watcher
+        } else {
+            codexWatcher?.stop()
+            codexWatcher = nil
+            apply(SessionReducer.removeWatched(&sessionState))
+        }
+    }
+
+    private func applyWatched(_ transcript: TranscriptSession) {
+        let key = SessionKey(source: .codex, sessionID: transcript.id)
+        let isNew = sessionState.sessions[key] == nil
+        apply(SessionReducer.upsertWatched(&sessionState, transcript, key: key, now: Date()))
+        if isNew, sessionState.sessions[key]?.ingress == .transcript {
+            Log.info("codex", "watched session", ["id": transcript.id, "project": sessionState.sessions[key]?.project ?? "-"])
+        }
     }
 
     func stop() {
+        codexWatcher?.stop()
         usageReader?.stop()
         pending.releaseAll()
         server.stop()

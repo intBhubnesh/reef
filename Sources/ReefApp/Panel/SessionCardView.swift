@@ -7,6 +7,7 @@ struct SessionCardView: View {
     var namespace: Namespace.ID?
 
     var body: some View {
+        let watched = session.ingress == .transcript
         Button { app.jump(session: session) } label: {
             HStack(alignment: .top, spacing: 0) {
                 // L4: the character is centred on the first two text lines, not the whole row,
@@ -46,6 +47,9 @@ struct SessionCardView: View {
                     Chip(text: AgentLabel.name(session.key.source), tint: colors.text, background: colors.background)
                     if let terminal = AgentLabel.terminalName(session.terminal) { Chip(text: terminal) }
                     Chip(text: Format.elapsed(since: session.startedAt))
+                    // Read-only: this session came from a transcript, so there is no hook to
+                    // answer and nothing to jump to.
+                    if watched { Chip(text: "Watched") }
                     if session.status == .done {
                         Circle().fill(Theme.done).frame(width: Metrics.statusDotSize, height: Metrics.statusDotSize)
                     }
@@ -59,7 +63,7 @@ struct SessionCardView: View {
             .contentShape(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help("Jump to terminal")
+        .help(watched ? "Focus VS Code. Read from the Codex transcript, so approvals happen there." : "Jump to terminal")
     }
 
     private var titleLine: String {
