@@ -79,9 +79,16 @@ public enum BridgeCLI {
         } else {
             cachePath = paths.reefDir + "/cache/rl.json"
         }
+        // Keep the limits and the model name: the header shows which model is running next to
+        // the limit it draws on. Nothing else from the payload is stored.
         guard let object = try? JSONSerialization.jsonObject(with: stdin), let json = object as? [String: Any],
-              let limits = json["rate_limits"], JSONSerialization.isValidJSONObject(limits),
-              let data = try? JSONSerialization.data(withJSONObject: limits)
+              let limits = json["rate_limits"] as? [String: Any]
+        else { return }
+        var kept: [String: Any] = ["rate_limits": limits]
+        if let model = json["model"] as? [String: Any], let name = model["display_name"] as? String {
+            kept["model"] = ["display_name": name]
+        }
+        guard JSONSerialization.isValidJSONObject(kept), let data = try? JSONSerialization.data(withJSONObject: kept)
         else { return }
         try? FileManager.default.createDirectory(atPath: (cachePath as NSString).deletingLastPathComponent,
                                                  withIntermediateDirectories: true)

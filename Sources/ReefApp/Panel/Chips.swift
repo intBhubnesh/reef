@@ -8,11 +8,11 @@ struct Chip: View {
 
     var body: some View {
         Text(text)
-            .font(Theme.small.weight(.medium))
+            .font(Theme.chipFont)
             .foregroundStyle(tint)
             .frame(height: Metrics.chipHeight)
-            .padding(.horizontal, 7)
-            .background(background, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .padding(.horizontal, Metrics.chipPadding)
+            .background(background, in: Capsule())
     }
 }
 

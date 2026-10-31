@@ -50,6 +50,37 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertEqual(UsageSnapshot.parse(data(json), now: Date())?.fiveHour?.usedPercent, 7)
     }
 
+    // The real status-line payload: epoch seconds, fractional percentages, a model object,
+    // and a spend-limit window. Verified against Claude Code's statusline reference.
+    func testParsesTheRealStatusLinePayload() {
+        let now = Date(timeIntervalSince1970: 1_738_420_000)
+        let json = """
+        {"model":{"id":"claude-opus-5-5","display_name":"Opus"},
+         "rate_limits":{
+           "five_hour":{"used_percentage":23.5,"resets_at":1738425600},
+           "seven_day":{"used_percentage":41.2,"resets_at":1738857600},
+           "spend_limit":{"used_percentage":62.8,"resets_at":1740787200,"used_usd":314.12,"limit_usd":500,"period":"monthly"}}}
+        """
+        let s = UsageSnapshot.parse(data(json), now: now)!
+        XCTAssertEqual(s.fiveHour?.usedPercent, 23, "23.5 rounds down to a whole percent")
+        XCTAssertEqual(s.sevenDay?.usedPercent, 41)
+        XCTAssertEqual(s.spendLimit?.usedPercent, 62)
+        XCTAssertEqual(s.modelName, "Opus")
+        XCTAssertEqual(s.fiveHour?.remaining(now: now), "1h33m", "epoch resets_at is read as seconds")
+    }
+
+    func testModelIsOptionalAndDoesNotBlockParsing() {
+        let s = UsageSnapshot.parse(data(#"{"rate_limits":{"seven_day":{"used_percentage":5}}}"#), now: Date())
+        XCTAssertNotNil(s)
+        XCTAssertNil(s?.modelName)
+        XCTAssertNil(s?.spendLimit)
+    }
+
+    func testAModelAloneIsNotASnapshot() {
+        XCTAssertNil(UsageSnapshot.parse(data(#"{"model":{"display_name":"Opus"}}"#), now: Date()),
+                     "a model name with no limits is nothing to show")
+    }
+
     func testStatusLineStateDetection() {
         XCTAssertEqual(StatusLineState.of(command: nil), .free)
         XCTAssertEqual(StatusLineState.of(command: ""), .free)

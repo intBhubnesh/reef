@@ -9,30 +9,35 @@ struct SessionCardView: View {
     var body: some View {
         Button { app.jump(session: session) } label: {
             HStack(alignment: .top, spacing: 0) {
+                // L4: the character is centred on the first two text lines, not the whole row,
+                // so it stays beside the title when subagents push the card taller.
                 SessionSprite(session: session, cell: Metrics.rowSpriteWidth / CGFloat(Metrics.spriteColumns))
                     .matchedGeometry(id: session.key, in: namespace)
-                    .frame(width: Metrics.rowSpriteWidth, height: Metrics.rowSpriteHeight, alignment: .leading)
-                    .padding(.top, 2)
-                    // L4: the text column starts at a fixed inset, so every row lines up.
-                    .padding(.trailing, Metrics.textColumn - Metrics.cardPadding - Metrics.rowSpriteWidth)
-                VStack(alignment: .leading, spacing: 3) {
+                    // L4: one fixed-width gutter, so the text column lands at the measured
+                    // inset on every row regardless of what the sprite draws.
+                    .frame(width: Metrics.textColumn - Metrics.cardPadding,
+                           height: Metrics.textLeading * 2, alignment: .leading)
+                VStack(alignment: .leading, spacing: 0) {
                     Text(titleLine)
                         .font(Theme.bodyEmphasis)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
+                        .frame(height: Metrics.textLeading, alignment: .leading)
                     if let prompt = session.lastPrompt {
-                        (Text("You: ").foregroundStyle(Theme.textSecondary) + Text(Format.firstLine(prompt, limit: 90)))
+                        (Text("You: ").foregroundStyle(Theme.textChip) + Text(Format.firstLine(prompt, limit: 90)))
                             .font(Theme.body)
-                            .foregroundStyle(Theme.textBody)
+                            .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
+                            .frame(height: Metrics.textLeading, alignment: .leading)
                     }
                     Text(statusLine)
                         .font(Theme.body)
                         .foregroundStyle(Theme.textTertiary)
                         .lineLimit(1)
+                        .frame(height: Metrics.textLeading, alignment: .leading)
                     if !session.subagents.isEmpty, app.showSubagents {
                         SubagentListView(subagents: session.subagents)
-                            .padding(.top, 4)
+                            .padding(.top, 6)
                     }
                 }
                 Spacer(minLength: 8)

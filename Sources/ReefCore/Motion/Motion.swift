@@ -100,8 +100,31 @@ public enum Metrics {
     public static let bannerIconSize: CGFloat = 26
     public static let subagentBoxInset: CGFloat = 8
 
+    // Header (L2)
+    /// Gap between the usage icon and the first label.
+    public static let headerIconGap: CGFloat = 6
+    /// Gap between words inside a usage group ("5h" "21%" "3h9m").
+    public static let headerWordGap: CGFloat = 5
+    /// Space either side of the `|` divider.
+    public static let headerDividerGap: CGFloat = 4
+    public static let headerIconSize: CGFloat = 12
+    public static let headerMuteSize: CGFloat = 13
+    public static let headerGearSize: CGFloat = 14
+    /// Centre to centre between the mute and gear glyphs.
+    public static let headerControlGap: CGFloat = 30
+    /// Gap between the model block and the mute glyph.
+    public static let headerModelGap: CGFloat = 22
+    /// The hover highlight behind the usage block.
+    public static let headerHighlightHeight: CGFloat = 22
+    public static let headerHighlightRadius: CGFloat = 5
+    public static let headerHighlightPadding: CGFloat = 5
+
     // Session row (L4)
     public static let chipHeight: CGFloat = 15
+    /// Horizontal padding inside a chip.
+    public static let chipPadding: CGFloat = 5
+    /// Gap between the character and its action glyph.
+    public static let spriteGlyphGap: CGFloat = 4
     public static let chipGap: CGFloat = 6.5
     public static let rightInset: CGFloat = 21
     public static let textColumn: CGFloat = 69.5

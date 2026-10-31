@@ -26,13 +26,24 @@ public struct UsageWindow: Equatable {
 public struct UsageSnapshot: Equatable {
     public let fiveHour: UsageWindow?
     public let sevenDay: UsageWindow?
+    /// Present behind a Claude apps gateway that sets a spend limit.
+    public let spendLimit: UsageWindow?
+    /// The agent's own name for the model it is running, e.g. "Opus".
+    public let modelName: String?
     public let capturedAt: Date
 
-    public init(fiveHour: UsageWindow?, sevenDay: UsageWindow?, capturedAt: Date) {
+    public init(fiveHour: UsageWindow?, sevenDay: UsageWindow?, spendLimit: UsageWindow? = nil,
+                modelName: String? = nil, capturedAt: Date) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
+        self.spendLimit = spendLimit
+        self.modelName = modelName
         self.capturedAt = capturedAt
     }
+
+    /// What the right-hand header block shows: the running model and the limit it draws on.
+    /// A spend limit is more specific than the weekly window, so it wins when present.
+    public var modelWindow: UsageWindow? { spendLimit ?? sevenDay }
 
     /// Past this age the numbers are shown greyed rather than as live values.
     public func isStale(now: Date = Date(), maxAge: TimeInterval = 600) -> Bool {
@@ -42,14 +53,16 @@ public struct UsageSnapshot: Equatable {
     /// Reads the cache the status-line shim writes. Returns nil for anything unrecognisable,
     /// so a malformed or truncated file simply means "no usage data" rather than a crash.
     public static func parse(_ data: Data, now: Date) -> UsageSnapshot? {
-        guard let object = try? JSONSerialization.jsonObject(with: data), var json = object as? [String: Any] else {
+        guard let object = try? JSONSerialization.jsonObject(with: data), let outer = object as? [String: Any] else {
             return nil
         }
-        if let wrapped = json["rate_limits"] as? [String: Any] { json = wrapped }
+        let model = (outer["model"] as? [String: Any])?["display_name"] as? String
+        let json = (outer["rate_limits"] as? [String: Any]) ?? outer
         let five = window(json["five_hour"])
         let seven = window(json["seven_day"])
-        guard five != nil || seven != nil else { return nil }
-        return UsageSnapshot(fiveHour: five, sevenDay: seven, capturedAt: now)
+        let spend = window(json["spend_limit"])
+        guard five != nil || seven != nil || spend != nil else { return nil }
+        return UsageSnapshot(fiveHour: five, sevenDay: seven, spendLimit: spend, modelName: model, capturedAt: now)
     }
 
     private static func window(_ value: Any?) -> UsageWindow? {

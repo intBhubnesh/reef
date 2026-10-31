@@ -34,13 +34,22 @@ enum Theme {
     static let codexChip = Color(hex: 0x1F3A5A)
     static let codexChipText = Color(hex: 0x6FA8FF)
 
-    // Type
+    // Type — sizes and weights from LAYOUT-SPEC §2 and §4.
+    /// Body text: the `You:` and summary lines, card prose.
     static let body = Font.system(size: 13)
+    /// Session and card titles.
     static let bodyEmphasis = Font.system(size: 14, weight: .semibold)
+    /// Chip labels.
+    static let chipFont = Font.system(size: 11, weight: .semibold)
+    /// Small supporting text that is not a chip.
     static let small = Font.system(size: 11)
     static let caption = Font.system(size: 12)
     static let mono = Font.system(size: 12, design: .monospaced)
+    /// Header labels and percentages: monospaced bold so the digits do not jitter.
     static let headerMono = Font.system(size: 13, weight: .bold, design: .monospaced)
+    /// Header times: the same face at regular weight, which is what makes the
+    /// percentages read as the number that matters.
+    static let headerMonoRegular = Font.system(size: 13, weight: .regular, design: .monospaced)
 
     /// One glance tells you what an agent needs: working, waiting on you, done, failed.
     static func statusColor(_ status: SessionStatus) -> Color {
