@@ -34,6 +34,10 @@ public struct TranscriptSession: Equatable {
 /// surfaced: Codex writes a transcript per internal review subagent too, and those would bury
 /// the user's actual work.
 public enum CodexTranscript {
+    /// Front ends that deliver Reef's hooks themselves. Reading their transcripts would show the
+    /// session twice, and would bring it back after its `SessionEnd` removed it.
+    static let hookedOriginators: Set<String> = ["codex-tui", "codex_cli", "codex_exec"]
+
     /// Reads the transcript's first line. Returns nil for anything that is not a user
     /// conversation, including partial lines written while Codex is still appending.
     public static func begin(metaLine: Data) -> TranscriptSession? {
@@ -42,7 +46,8 @@ public enum CodexTranscript {
               let payload = record["payload"] as? [String: Any],
               let id = payload["id"] as? String, !id.isEmpty,
               payload["thread_source"] as? String == "user",
-              payload["parent_thread_id"] == nil || payload["parent_thread_id"] is NSNull
+              payload["parent_thread_id"] == nil || payload["parent_thread_id"] is NSNull,
+              !hookedOriginators.contains(payload["originator"] as? String ?? "")
         else { return nil }
         let started = timestamp(record) ?? Date()
         return TranscriptSession(id: id,

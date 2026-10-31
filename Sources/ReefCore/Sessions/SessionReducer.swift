@@ -114,6 +114,7 @@ public enum SessionReducer {
                                      key: SessionKey, now: Date) -> [SessionEffect] {
         if let existing = state.sessions[key], existing.ingress == .hook { return [] }
 
+        let existed = state.sessions[key] != nil
         var session = state.sessions[key] ?? Session(key: key, startedAt: transcript.startedAt)
         let wasDone = session.status == .done
         session.ingress = .transcript
@@ -124,7 +125,10 @@ public enum SessionReducer {
         session.lastAssistantMessage = transcript.lastAssistantMessage
         // A watched session is reachable in its editor, so the jump engine opens VS Code there.
         session.terminal = TerminalIdentity(bundleID: JumpPlanner.vscodeBundle)
-        let status: SessionStatus = transcript.isWorking ? .working : .done
+        // A transcript whose first records carry no turn yet is a session just opening, not one
+        // that finished: calling it done would flash a completion the moment it starts.
+        let hasFinishedATurn = transcript.turnCount > 0 || transcript.lastAssistantMessage != nil
+        let status: SessionStatus = transcript.isWorking ? .working : (hasFinishedATurn ? .done : .idle)
         if session.status != status {
             session.statusChangedAt = now
             if session.status.animationFamily != status.animationFamily { session.animationPhaseStart = now }
@@ -132,7 +136,9 @@ public enum SessionReducer {
         }
         state.sessions[key] = session
 
-        guard status == .done, !wasDone else { return [] }
+        // Only a completion that happens while Reef is watching is worth announcing. A session
+        // that had already ended when the watcher first read it just joins the list.
+        guard status == .done, !wasDone, existed else { return [] }
         return [.revealCompletion(key), .sound(.done)]
     }
 

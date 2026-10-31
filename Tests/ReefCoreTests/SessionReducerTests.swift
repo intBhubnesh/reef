@@ -234,6 +234,23 @@ final class SessionReducerTests: XCTestCase {
         XCTAssertEqual(s.sessions.count, 1)
     }
 
+    func testAFinishedSessionSeenForTheFirstTimeIsSilent() {
+        var s = SessionState()
+        let key = SessionKey(source: .codex, sessionID: "old")
+        let t = transcript("old", working: false, message: "All done.", turns: 3)
+        let effects = SessionReducer.upsertWatched(&s, t, key: key, now: t0)
+        XCTAssertEqual(s.sessions[key]?.status, .done)
+        XCTAssertEqual(effects, [], "a session that ended before Reef started must not open the panel")
+    }
+
+    func testASessionWithNoTurnsYetIsIdleNotDone() {
+        var s = SessionState()
+        let key = SessionKey(source: .codex, sessionID: "fresh")
+        let t = transcript("fresh", working: false, message: nil, turns: 0)
+        _ = SessionReducer.upsertWatched(&s, t, key: key, now: t0)
+        XCTAssertEqual(s.sessions[key]?.status, .idle, "the first record of a new session is not a finished turn")
+    }
+
     func testAHookEventTakesOverAWatchedSession() {
         var s = SessionState()
         let key = SessionKey(source: .codex, sessionID: "takeover")

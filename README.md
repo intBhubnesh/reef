@@ -10,4 +10,6 @@ scripts/bundle.sh      # dist/Reef.app (ad hoc signed)
 
 Design: `docs/superpowers/specs/2026-10-28-reef-design.md`. Plan: `docs/superpowers/plans/2026-10-28-reef-stage1.md`.
 
+Codex in VS Code never runs hooks, so Reef reads its transcripts instead and shows those sessions read-only; see `docs/protocol.md` section 7.
+
 Reef honours the system "reduce motion" setting: stepped sprite animation freezes and transitions become short fades.

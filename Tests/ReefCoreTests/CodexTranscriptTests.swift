@@ -79,6 +79,20 @@ final class CodexTranscriptTests: XCTestCase {
 
     /// Folds this machine's real transcripts when they exist, which is the only way to know the
     /// parser matches what Codex actually writes. Skips cleanly on a machine without them.
+    func testBeginRejectsFrontEndsThatRunHooks() {
+        // codex-tui and codex exec deliver their own events, so reading their transcripts too
+        // would show the session twice, or resurrect it after its hooks said it ended.
+        func metaLine(originator: String) -> Data {
+            line(##"{"type":"session_meta","payload":{"id":"abc","thread_source":"user","originator":"\##(originator)"}}"##)
+        }
+        for originator in ["codex-tui", "codex_exec"] {
+            XCTAssertNil(CodexTranscript.begin(metaLine: metaLine(originator: originator)), "\(originator) runs hooks")
+        }
+        XCTAssertNotNil(CodexTranscript.begin(metaLine: metaLine(originator: "codex_vscode")))
+        XCTAssertNotNil(CodexTranscript.begin(metaLine: metaLine(originator: "something_new")),
+                        "an unknown front end is assumed hookless, which is the case worth showing")
+    }
+
     func testFoldsARealTranscriptWhenPresent() throws {
         let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
         guard FileManager.default.fileExists(atPath: root.path) else {

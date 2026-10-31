@@ -71,3 +71,27 @@ Claude Code has exactly one `statusLine` slot, so Reef claims it only when nobod
 **What the app reads.** `UsageReader` polls the cache every 30 s. Staleness is measured from the cache file's modification time, so a reading older than 10 minutes renders grey rather than passing as live.
 
 **Removing Reef.** Use Settings → Integrations → Remove before deleting the app. Deleting the app alone leaves `statusLine` pointing at a script that no longer exists, and Claude Code will show an empty status line until the key is removed by hand.
+
+## 7. Transcript ingress (Codex, read-only)
+
+Hooks are Reef's control channel. Codex also has front ends that never run them: the VS Code extension drives its own `codex app-server` binary, which ignores `~/.codex/hooks.json` entirely. For those, Reef reads what Codex writes to disk.
+
+**Where.** `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl`, one file per session, appended as the agent works. `CodexTranscriptWatcher` polls every 2 s, considers only files modified in the last 30 minutes, and reads each one forward from a stored byte offset. A trailing partial line is left unconsumed, so a record Codex is still writing is parsed whole on the next pass. Offsets live in memory; a relaunch re-folds the recent files.
+
+**What is skipped.** The first complete line decides, and a file rejected once is never reopened:
+
+| Rejected | Why |
+|---|---|
+| `thread_source` other than `user`, or any `parent_thread_id` | Codex writes a transcript per internal subagent. On this machine 1255 of 1316 October transcripts were `guardian_review` or `subagent` runs, which would bury the real work. |
+| `originator` in `codex-tui`, `codex_cli`, `codex_exec` | Those front ends deliver Reef's hooks themselves. Reading their transcripts too would show the session twice, and would bring it back after its `SessionEnd` removed it. |
+| Anything that is not a `session_meta` record with a non-empty `id` | Truncated, malformed, or a shape Reef does not know. |
+
+An unknown originator is accepted: a new hookless front end is exactly the case this ingress exists for.
+
+**Records that matter.** `event_msg/task_started` starts a turn, `task_complete` ends it, `thread_settings_applied` carries the model, and a `response_item` message with `role: assistant` is the closing message. Every other record type is ignored, so a Codex update that adds records degrades to missing detail rather than a broken session.
+
+**Hooks win.** A transcript never overwrites a session that arrived through hooks, and a hook event takes over a session the watcher found first by flipping its ingress. Watched sessions carry no `PendingRequest` and so can never show approval buttons: a transcript records what happened, it cannot answer. Clicking one focuses VS Code.
+
+**Announcing.** Only a completion that happens while Reef is watching reveals the panel and plays a sound. A session that had already finished when the watcher first read it joins the list silently, and a session whose transcript carries no turn yet shows idle rather than flashing done.
+
+**Turning it off.** Settings → Integrations → "Watch Codex sessions from other editors". Off removes every watched session and stops the polling.
