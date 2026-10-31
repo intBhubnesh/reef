@@ -74,7 +74,9 @@ public enum CodexTranscript {
             case "task_started":
                 session.isWorking = true
                 session.turnCount += 1
-            case "task_complete":
+            case "task_complete", "turn_aborted":
+                // turn_aborted is what Stop in the editor writes, and no task_complete follows
+                // it. Without this the card claims to be working until the idle sweep.
                 session.isWorking = false
             case "thread_settings_applied":
                 if let settings = payload["thread_settings"] as? [String: Any],
@@ -95,6 +97,17 @@ public enum CodexTranscript {
         default:
             break
         }
+    }
+
+    /// Splits appended bytes into whole records, leaving a trailing partial line unconsumed, and
+    /// reports how many bytes were used so the caller can resume after them. A transcript is read
+    /// while Codex is still writing to it, so the last line is often half a record.
+    public static func completeLines(in data: Data) -> (lines: [Data], consumed: Int) {
+        let newline = UInt8(ascii: "\n")
+        guard let lastBreak = data.lastIndex(of: newline) else { return ([], 0) }
+        let complete = data[..<lastBreak]
+        let lines = complete.split(separator: newline).map { Data($0) }
+        return (lines, data.distance(from: data.startIndex, to: lastBreak) + 1)
     }
 
     private static func object(_ line: Data) -> [String: Any]? {

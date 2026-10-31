@@ -106,6 +106,11 @@ public enum SessionReducer {
         state.sessions[key] = session
     }
 
+    /// How long a transcript may claim an unfinished turn before Reef stops believing it. A
+    /// crashed editor writes no closing record, and a card stuck on "working" also suppresses
+    /// the all-finished notification for every real session.
+    public static let staleWorkAfter: TimeInterval = 30 * 60
+
     /// Creates or updates a session read from a transcript. Hooks win: when a session with this
     /// key already arrived through hooks the transcript is ignored entirely, because the hook
     /// path carries approvals and the transcript cannot.
@@ -128,7 +133,8 @@ public enum SessionReducer {
         // A transcript whose first records carry no turn yet is a session just opening, not one
         // that finished: calling it done would flash a completion the moment it starts.
         let hasFinishedATurn = transcript.turnCount > 0 || transcript.lastAssistantMessage != nil
-        let status: SessionStatus = transcript.isWorking ? .working : (hasFinishedATurn ? .done : .idle)
+        let working = transcript.isWorking && now.timeIntervalSince(transcript.lastActivityAt) < staleWorkAfter
+        let status: SessionStatus = working ? .working : (transcript.isWorking ? .idle : (hasFinishedATurn ? .done : .idle))
         if session.status != status {
             session.statusChangedAt = now
             if session.status.animationFamily != status.animationFamily { session.animationPhaseStart = now }

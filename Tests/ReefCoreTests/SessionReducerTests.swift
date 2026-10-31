@@ -251,6 +251,18 @@ final class SessionReducerTests: XCTestCase {
         XCTAssertEqual(s.sessions[key]?.status, .idle, "the first record of a new session is not a finished turn")
     }
 
+    func testAWatchedTurnThatWentQuietStopsClaimingToWork() {
+        // A crashed or killed editor leaves a transcript whose last record says a turn began.
+        // Reporting that as working for hours also gags the "all agents finished" notification.
+        var s = SessionState()
+        let key = SessionKey(source: .codex, sessionID: "stale")
+        var t = transcript("stale", working: true)
+        t.lastActivityAt = t0.addingTimeInterval(-SessionReducer.staleWorkAfter - 60)
+        let effects = SessionReducer.upsertWatched(&s, t, key: key, now: t0)
+        XCTAssertEqual(s.sessions[key]?.status, .idle)
+        XCTAssertEqual(effects, [], "a turn nobody is running is not a completion")
+    }
+
     func testAHookEventTakesOverAWatchedSession() {
         var s = SessionState()
         let key = SessionKey(source: .codex, sessionID: "takeover")

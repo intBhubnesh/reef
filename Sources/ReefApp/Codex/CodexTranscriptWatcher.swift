@@ -10,6 +10,8 @@ final class CodexTranscriptWatcher {
     static let pollInterval: TimeInterval = 2
     /// Only files touched this recently are considered, which keeps each scan to a few files.
     static let lookback: TimeInterval = 30 * 60
+    /// Most bytes read from one file in one pass.
+    static let readChunk = 1 << 20
 
     private struct Entry {
         var offset: UInt64 = 0
@@ -44,10 +46,14 @@ final class CodexTranscriptWatcher {
     }
 
     func scanOnce() {
-        for url in recentTranscripts() {
+        for (url, modified) in recentTranscripts() {
             var entry = entries[url.path] ?? Entry()
             guard !entry.ignored else { continue }
-            guard let (lines, newOffset) = readNewLines(at: url, from: entry.offset) else { continue }
+            guard let (lines, newOffset) = readNewLines(at: url, from: entry.offset) else {
+                // Rotated or truncated under us: the session we folded no longer matches the file.
+                entries[url.path] = Entry()
+                continue
+            }
             entry.offset = newOffset
             var changed = false
 
@@ -57,6 +63,7 @@ final class CodexTranscriptWatcher {
                         // The first complete line settles it: a subagent transcript, or a shape
                         // Reef does not understand. Either way, stop looking at this file.
                         entry.ignored = true
+                        Log.info("codex", "ignoring transcript", ["file": url.lastPathComponent])
                         break
                     }
                     entry.session = begun
@@ -67,13 +74,22 @@ final class CodexTranscriptWatcher {
                 changed = true
             }
 
+            // The file's own clock is what says this session is alive. Record timestamps can be
+            // older than the file (a transcript copied or touched, or records Reef cannot date),
+            // and a session that looks ancient is pruned as idle and then found again on the
+            // next pass, flickering on and off the island.
+            if var session = entry.session {
+                session.lastActivityAt = max(session.lastActivityAt, modified)
+                entry.session = session
+            }
             entries[url.path] = entry
             if changed, let session = entry.session { onSession(session) }
         }
     }
 
-    /// Transcript files under the date folders, newest first, touched within the lookback.
-    private func recentTranscripts() -> [URL] {
+    /// Transcript files under the date folders with their modification dates, newest first,
+    /// touched within the lookback.
+    private func recentTranscripts() -> [(URL, Date)] {
         let cutoff = Date().addingTimeInterval(-Self.lookback)
         guard let walker = FileManager.default.enumerator(
             at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]
@@ -84,24 +100,25 @@ final class CodexTranscriptWatcher {
                   modified > cutoff else { continue }
             found.append((url, modified))
         }
-        return found.sorted { $0.1 > $1.1 }.map(\.0)
+        return found.sorted { $0.1 > $1.1 }
     }
 
-    /// Complete lines appended since `offset`. A trailing partial line is left unconsumed, so a
-    /// record Codex is still writing is read whole on the next pass.
+    /// Complete lines appended since `offset`, at most `readChunk` bytes of them. Transcripts on
+    /// this machine reach hundreds of megabytes, and offsets do not survive a relaunch, so an
+    /// unbounded read would stall the main actor on the first sighting of a long session. A file
+    /// larger than one chunk catches up over successive polls.
     private func readNewLines(at url: URL, from offset: UInt64) -> ([Data], UInt64)? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let end = try? handle.seekToEnd() else { return nil }
-        if end < offset { return ([], 0) }          // truncated or rotated: start over
+        if end < offset { return nil }              // truncated or rotated: forget what we had
         guard end > offset else { return ([], offset) }
-        guard (try? handle.seek(toOffset: offset)) != nil, let data = try? handle.readToEnd(), !data.isEmpty else {
-            return ([], offset)
-        }
-        let newline = UInt8(ascii: "\n")
-        guard let lastBreak = data.lastIndex(of: newline) else { return ([], offset) }
-        let complete = data[..<lastBreak]
-        let lines = complete.split(separator: newline).map { Data($0) }
-        return (lines, offset + UInt64(lastBreak) + 1)
+        guard (try? handle.seek(toOffset: offset)) != nil,
+              let data = try? handle.read(upToCount: Self.readChunk), !data.isEmpty
+        else { return ([], offset) }
+        let (lines, consumed) = CodexTranscript.completeLines(in: data)
+        // A single record longer than a chunk would otherwise stall this file forever.
+        guard consumed > 0 else { return ([], offset + UInt64(data.count)) }
+        return (lines, offset + UInt64(consumed))
     }
 }
