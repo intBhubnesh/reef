@@ -182,6 +182,28 @@ enum AgentLabel {
     }
 }
 
+/// Small, always-visible session removal control. It is intentionally its own button rather
+/// than being nested in the card's jump button, so clicks never activate both actions.
+struct SessionDismissButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 8.5, weight: .bold))
+                .foregroundStyle(hovering ? Theme.textPrimary : Theme.textTertiary)
+                .frame(width: 20, height: 20)
+                .background(hovering ? Theme.headerHighlight : .clear, in: Circle())
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Close session")
+        .accessibilityLabel("Close session")
+    }
+}
+
 struct PanelButtonStyle: ButtonStyle {
     enum Role { case primary, secondary, quiet, danger }
     let role: Role

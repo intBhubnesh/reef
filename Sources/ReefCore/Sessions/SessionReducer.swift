@@ -10,6 +10,10 @@ public enum SessionReducer {
                               requestID: String?, now: Date) -> [SessionEffect] {
         let event = normalized.hook
         let key = SessionKey(source: event.source, sessionID: event.sessionID)
+        if state.dismissedKeys.contains(key) {
+            if normalized.kind == .sessionEnded { state.dismissedKeys.remove(key) }
+            return []
+        }
         var session = state.sessions[key] ?? Session(key: key, startedAt: now)
         session.lastEventAt = now
         session.missedProcessPolls = 0
@@ -122,6 +126,13 @@ public enum SessionReducer {
         return [.requestCleared(key, requestID: requestID)]
     }
 
+    /// Removes a card and suppresses rediscovery until the agent emits SessionEnd or Reef restarts.
+    public static func dismiss(_ state: inout SessionState, key: SessionKey) -> [SessionEffect] {
+        guard state.sessions.removeValue(forKey: key) != nil else { return [] }
+        state.dismissedKeys.insert(key)
+        return [.removed(key)]
+    }
+
     /// The request was handed back to the terminal; keep showing it read-only.
     public static func markReleased(_ state: inout SessionState, key: SessionKey, requestID: String) {
         guard var session = state.sessions[key],
@@ -141,6 +152,7 @@ public enum SessionReducer {
     @discardableResult
     public static func upsertWatched(_ state: inout SessionState, _ transcript: TranscriptSession,
                                      key: SessionKey, now: Date) -> [SessionEffect] {
+        guard !state.dismissedKeys.contains(key) else { return [] }
         if let existing = state.sessions[key], existing.ingress == .hook { return [] }
 
         let existed = state.sessions[key] != nil

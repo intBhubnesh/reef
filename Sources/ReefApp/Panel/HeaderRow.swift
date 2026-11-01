@@ -1,9 +1,8 @@
-import AppKit
 import ReefCore
 import SwiftUI
 
 /// The panel's top band. Left: the account's rate-limit windows. Right: the model the focused
-/// agent is running and the limit that model draws on. Then mute, settings and quit.
+/// agent is running and the limit that model draws on. Then mute and settings.
 /// Typography and spacing from LAYOUT-SPEC §2.
 struct HeaderRow: View {
     let namespace: Namespace.ID
@@ -71,16 +70,6 @@ struct HeaderRow: View {
             .buttonStyle(.plain)
             .help("Settings")
 
-            Button { NSApp.terminate(nil) } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(width: 22, height: Metrics.headerHeight)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Quit Reef")
-            .accessibilityLabel("Quit Reef")
         }
     }
 

@@ -217,13 +217,25 @@ final class AppState {
         }
         let key = SessionKey(source: source, sessionID: event.sessionID)
         let requestID: String? = request.mode == .wait ? request.id : nil
+        let normalized = AgentEventAdapter.normalize(event)
+        if sessionState.dismissedKeys.contains(key) {
+            // Closing a live card hands any later blocking prompt back to its terminal instead
+            // of leaving the bridge waiting forever. SessionEnd clears the suppression key.
+            if normalized.kind == .sessionEnded {
+                _ = SessionReducer.reduce(&sessionState, event: normalized, requestID: nil, now: Date())
+            }
+            if request.mode == .wait {
+                connection.reply(BridgeResponse(id: request.id, reply: [:]))
+            }
+            Log.info("session", "ignored dismissed", ["session": String(event.sessionID.prefix(8))])
+            return
+        }
         if request.mode == .wait {
             pending.add(requestID: request.id, key: key, connection: connection,
                         deadline: Date().addingTimeInterval(Self.waitDeadline(for: source)))
         }
         Log.info("session", "recv", ["event": event.name, "source": sourceRaw, "session": String(event.sessionID.prefix(8)),
                                      "tool": event.toolName ?? ""])
-        let normalized = AgentEventAdapter.normalize(event)
         let effects = SessionReducer.reduce(&sessionState, event: normalized, requestID: requestID, now: Date())
         rememberTerminal(for: key)
         apply(effects)
@@ -592,9 +604,8 @@ final class AppState {
     private func dismissSessions(_ keys: [SessionKey], reason: String) {
         let existing = keys.filter { sessionState.sessions[$0] != nil }
         guard !existing.isEmpty else { return }
-        for key in existing { sessionState.sessions[key] = nil }
         Log.info("session", "dismissed", ["count": "\(existing.count)", "reason": reason])
-        apply(existing.map(SessionEffect.removed))
+        apply(existing.flatMap { SessionReducer.dismiss(&sessionState, key: $0) })
     }
 
     @ObservationIgnored var onOpenSettings: (() -> Void)?

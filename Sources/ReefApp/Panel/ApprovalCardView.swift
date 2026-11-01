@@ -87,6 +87,7 @@ struct ApprovalCardView: View {
 }
 
 struct CardHeader: View {
+    @Environment(AppState.self) private var app
     let session: Session
     let badge: String
     let badgeTint: Color
@@ -102,6 +103,8 @@ struct CardHeader: View {
             Spacer()
             AgentIconChip(source: session.key.source)
             TerminalBadge(terminal: session.terminal)
+            Chip(text: Format.elapsed(since: session.startedAt))
+            SessionDismissButton { app.dismiss(session: session) }
         }
     }
 }

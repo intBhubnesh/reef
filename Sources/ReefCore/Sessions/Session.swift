@@ -153,7 +153,13 @@ public enum SessionEffect: Equatable {
 
 public struct SessionState: Equatable {
     public var sessions: [SessionKey: Session]
-    public init() { sessions = [:] }
+    /// Sessions explicitly closed by the user stay suppressed while their underlying process
+    /// continues to emit hooks or transcript updates. A real session-end event releases the key.
+    public var dismissedKeys: Set<SessionKey>
+    public init() {
+        sessions = [:]
+        dismissedKeys = []
+    }
 
     public var ordered: [Session] { sessions.values.sorted { $0.startedAt < $1.startedAt } }
 }

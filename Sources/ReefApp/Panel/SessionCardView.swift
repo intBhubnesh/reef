@@ -8,59 +8,64 @@ struct SessionCardView: View {
 
     var body: some View {
         let watched = session.ingress == .transcript
-        Button { app.jump(session: session) } label: {
-            HStack(alignment: .top, spacing: 0) {
-                // L4: the character is centred on the first two text lines, not the whole row,
-                // so it stays beside the title when subagents push the card taller.
-                SessionSprite(session: session, cell: Metrics.rowSpriteWidth / CGFloat(Metrics.spriteColumns))
-                    .matchedGeometry(id: session.key, in: namespace, isSource: app.notch.state.isExpanded)
-                    // L4: one fixed-width gutter, so the text column lands at the measured
-                    // inset on every row regardless of what the sprite draws.
-                    .frame(width: Metrics.textColumn - Metrics.cardPadding,
-                           height: Metrics.textLeading * 2, alignment: .leading)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(titleLine)
-                        .font(Theme.bodyEmphasis)
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                        .frame(height: Metrics.textLeading, alignment: .leading)
-                    if let prompt = session.lastPrompt {
-                        (Text("You: ").foregroundStyle(Theme.textChip) + Text(Format.firstLine(prompt, limit: 90)))
-                            .font(Theme.body)
-                            .foregroundStyle(Theme.textSecondary)
+        HStack(alignment: .top, spacing: 0) {
+            Button { app.jump(session: session) } label: {
+                HStack(alignment: .top, spacing: 0) {
+                    // L4: the character is centred on the first two text lines, not the whole
+                    // row, so it stays beside the title when subagents push the card taller.
+                    SessionSprite(session: session, cell: Metrics.rowSpriteWidth / CGFloat(Metrics.spriteColumns))
+                        .matchedGeometry(id: session.key, in: namespace, isSource: app.notch.state.isExpanded)
+                        // L4: one fixed-width gutter, so the text column lands at the measured
+                        // inset on every row regardless of what the sprite draws.
+                        .frame(width: Metrics.textColumn - Metrics.cardPadding,
+                               height: Metrics.textLeading * 2, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(titleLine)
+                            .font(Theme.bodyEmphasis)
+                            .foregroundStyle(Theme.textPrimary)
                             .lineLimit(1)
                             .frame(height: Metrics.textLeading, alignment: .leading)
+                        if let prompt = session.lastPrompt {
+                            (Text("You: ").foregroundStyle(Theme.textChip) + Text(Format.firstLine(prompt, limit: 90)))
+                                .font(Theme.body)
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                                .frame(height: Metrics.textLeading, alignment: .leading)
+                        }
+                        Text(statusLine)
+                            .font(Theme.body)
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                            .frame(height: Metrics.textLeading, alignment: .leading)
+                        if !session.subagents.isEmpty, app.showSubagents {
+                            SubagentListView(subagents: session.subagents)
+                                .padding(.top, 6)
+                        }
                     }
-                    Text(statusLine)
-                        .font(Theme.body)
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                        .frame(height: Metrics.textLeading, alignment: .leading)
-                    if !session.subagents.isEmpty, app.showSubagents {
-                        SubagentListView(subagents: session.subagents)
-                            .padding(.top, 6)
-                    }
+                    Spacer(minLength: 8)
                 }
-                Spacer(minLength: 8)
-                HStack(spacing: Metrics.chipGap) {
-                    let colors = Theme.chipColors(session.key.source)
-                    AgentIconChip(source: session.key.source, tint: colors.text, background: colors.background)
-                    TerminalBadge(terminal: session.terminal)
-                    Chip(text: Format.elapsed(since: session.startedAt))
-                    if session.status == .done {
-                        Circle().fill(Theme.done).frame(width: Metrics.statusDotSize, height: Metrics.statusDotSize)
-                    }
-                }
-                .padding(.trailing, Metrics.rightInset - Metrics.cardPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(Metrics.cardPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous).stroke(Theme.cardBorder))
-            .contentShape(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
+            .buttonStyle(.plain)
+            .help(watched ? "Focus VS Code. Read from the Codex transcript, so approvals happen there." : "Jump to terminal")
+
+            HStack(spacing: Metrics.chipGap) {
+                let colors = Theme.chipColors(session.key.source)
+                AgentIconChip(source: session.key.source, tint: colors.text, background: colors.background)
+                TerminalBadge(terminal: session.terminal)
+                Chip(text: Format.elapsed(since: session.startedAt))
+                if session.status == .done {
+                    Circle().fill(Theme.done).frame(width: Metrics.statusDotSize, height: Metrics.statusDotSize)
+                }
+                SessionDismissButton { app.dismiss(session: session) }
+            }
+            .padding(.trailing, Metrics.rightInset - Metrics.cardPadding)
         }
-        .buttonStyle(.plain)
-        .help(watched ? "Focus VS Code. Read from the Codex transcript, so approvals happen there." : "Jump to terminal")
+        .padding(Metrics.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous).stroke(Theme.cardBorder))
+        .contentShape(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous))
         .contextMenu {
             Button("Dismiss agent", systemImage: "xmark.circle") { app.dismiss(session: session) }
         }

@@ -84,6 +84,34 @@ final class SessionReducerTests: XCTestCase {
         XCTAssertEqual(effects, [.removed(key)])
     }
 
+    func testDismissedHookSessionStaysHiddenUntilSessionEnds() {
+        var state = SessionState()
+        _ = apply(&state, event("SessionStart"))
+
+        XCTAssertEqual(SessionReducer.dismiss(&state, key: key), [.removed(key)])
+        XCTAssertNil(state.sessions[key])
+        XCTAssertTrue(state.dismissedKeys.contains(key))
+
+        XCTAssertEqual(apply(&state, event("UserPromptSubmit")), [])
+        XCTAssertNil(state.sessions[key], "new hook activity must not immediately restore a closed card")
+
+        XCTAssertEqual(apply(&state, event("SessionEnd")), [])
+        XCTAssertFalse(state.dismissedKeys.contains(key))
+        _ = apply(&state, event("SessionStart"))
+        XCTAssertNotNil(state.sessions[key], "a genuinely new lifecycle may use the key again")
+    }
+
+    func testDismissedTranscriptSessionDoesNotReappear() {
+        var state = SessionState()
+        let watchedKey = SessionKey(source: .codex, sessionID: "closed-watch")
+        _ = SessionReducer.upsertWatched(&state, transcript("closed-watch"), key: watchedKey, now: t0)
+        _ = SessionReducer.dismiss(&state, key: watchedKey)
+
+        XCTAssertEqual(SessionReducer.upsertWatched(&state, transcript("closed-watch"),
+                                                     key: watchedKey, now: t0), [])
+        XCTAssertNil(state.sessions[watchedKey])
+    }
+
     func testPruneIdleRemovesAfterTwoHoursOnly() {
         var s = SessionState()
         _ = apply(&s, event("SessionStart"))

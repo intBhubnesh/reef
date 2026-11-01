@@ -18,21 +18,25 @@ struct CompletionCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button { app.jump(session: session) } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
-                        .foregroundStyle(failed ? Theme.failed : Theme.done)
-                        .font(.system(size: 16, weight: .semibold))
-                    Text(failed ? "Failed" : "Done")
-                        .font(Theme.body.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                    Text(session.project ?? "").font(Theme.body).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                    Spacer()
-                    AgentIconChip(source: session.key.source)
-                    Chip(text: Format.elapsed(since: session.startedAt))
+            HStack(spacing: 8) {
+                Button { app.jump(session: session) } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundStyle(failed ? Theme.failed : Theme.done)
+                            .font(.system(size: 16, weight: .semibold))
+                        Text(failed ? "Failed" : "Done")
+                            .font(Theme.body.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                        Text(session.project ?? "")
+                            .font(Theme.body).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Spacer()
+                    }
                 }
+                .buttonStyle(.plain)
+                .help("Jump to agent")
+                AgentIconChip(source: session.key.source)
+                Chip(text: Format.elapsed(since: session.startedAt))
+                SessionDismissButton { app.dismiss(session: session) }
             }
-            .buttonStyle(.plain)
-            .help("Jump to agent")
 
             if let message = session.lastAssistantMessage, !message.isEmpty {
                 MarkdownText(text: message)

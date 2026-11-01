@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2 — 2026-11-01
+
+- Replace the global quit control with a close button beside every session time badge.
+- Keep manually closed active sessions hidden instead of rediscovering them immediately.
+
 ## 1.0.1 — 2026-11-01
 
 - Add a visible compact quit button to the notch header for accessory-mode installs.
