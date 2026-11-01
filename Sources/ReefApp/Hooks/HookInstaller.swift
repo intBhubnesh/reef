@@ -36,6 +36,7 @@ enum HookInstaller {
     static func install(_ source: AgentSource) -> String? {
         if let error = installBridgeBinary() { return error }
         let ok = HookFiles.transform(file: hookFile(source)) { HookConfig.install(into: $0, source: source) }
+        if ok { HookManifestStore.record(source) }
         Log.info("hook", ok ? "installed" : "install failed", ["source": source.rawValue])
         return ok ? nil : "could not write \(hookFile(source))"
     }
@@ -43,12 +44,40 @@ enum HookInstaller {
     @discardableResult
     static func uninstall(_ source: AgentSource) -> String? {
         let ok = HookFiles.transform(file: hookFile(source)) { HookConfig.uninstall(from: $0, source: source) }
+        if ok { HookManifestStore.remove(source) }
         Log.info("hook", ok ? "uninstalled" : "uninstall failed", ["source": source.rawValue])
         return ok ? nil : "could not write \(hookFile(source))"
     }
 
     static func status(_ source: AgentSource) -> HookConfig.HookStatus {
         HookConfig.status(of: HookFiles.read(file: hookFile(source)) ?? [:], source: source)
+    }
+
+    static func health(_ source: AgentSource) -> HookHealth {
+        let fm = FileManager.default
+        var issues: [HookHealthIssue] = []
+        if !fm.fileExists(atPath: Paths.bridgeBinary.path) {
+            issues.append(.bridgeMissing)
+        } else if !fm.isExecutableFile(atPath: Paths.bridgeBinary.path) {
+            issues.append(.bridgeNotExecutable)
+        }
+        let file = hookFile(source)
+        let root: [String: Any]
+        if !fm.fileExists(atPath: file) {
+            issues.append(.configMissing)
+            root = [:]
+        } else if let parsed = HookFiles.read(file: file) {
+            root = parsed
+        } else {
+            issues.append(.configMalformed)
+            root = [:]
+        }
+        let status = HookConfig.status(of: root, source: source)
+        if !status.missingEvents.isEmpty { issues.append(.missingManagedEvents) }
+        if !status.staleEvents.isEmpty || !status.obsoleteEvents.isEmpty { issues.append(.staleManagedCommand) }
+        return HookHealth(source: source, issues: issues,
+                          missingEvents: status.missingEvents,
+                          staleEvents: status.staleEvents + status.obsoleteEvents)
     }
 
     static var terminalTitleEnvSet: Bool {

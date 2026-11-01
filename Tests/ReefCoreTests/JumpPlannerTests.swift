@@ -41,4 +41,23 @@ final class JumpPlannerTests: XCTestCase {
         let t = TerminalIdentity(tty: "/dev/ttys006", bundleID: "com.example.term")
         XCTAssertEqual(JumpPlanner.plan(t, cwd: "/p"), [.activateApp(bundleID: "com.example.term")])
     }
+
+    func testTerminalAndITermUseTTYPrecisionBeforeActivation() {
+        let terminal = TerminalIdentity(tty: "/dev/ttys010", bundleID: JumpPlanner.terminalBundle)
+        XCTAssertEqual(JumpPlanner.plan(terminal, cwd: nil), [
+            .terminalFocusTTY("/dev/ttys010"), .activateApp(bundleID: JumpPlanner.terminalBundle),
+        ])
+        let iterm = TerminalIdentity(tty: "/dev/ttys011", bundleID: JumpPlanner.iTermBundle)
+        XCTAssertEqual(JumpPlanner.plan(iterm, cwd: nil), [
+            .iTermFocusTTY("/dev/ttys011"), .activateApp(bundleID: JumpPlanner.iTermBundle),
+        ])
+    }
+
+    func testWezTermUsesPaneID() {
+        var wezterm = TerminalIdentity(tty: "/dev/ttys012", bundleID: JumpPlanner.weztermBundle)
+        wezterm.weztermPaneID = 42
+        XCTAssertEqual(JumpPlanner.plan(wezterm, cwd: nil), [
+            .weztermFocusPane(42), .activateApp(bundleID: JumpPlanner.weztermBundle),
+        ])
+    }
 }

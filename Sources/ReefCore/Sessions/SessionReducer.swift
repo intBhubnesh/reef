@@ -3,26 +3,40 @@ import Foundation
 /// Pure reducer: hook events in, session state changes and UI/sound effects out.
 public enum SessionReducer {
     public static func reduce(_ state: inout SessionState, event: HookEvent, requestID: String?, now: Date) -> [SessionEffect] {
+        reduce(&state, event: AgentEventAdapter.normalize(event), requestID: requestID, now: now)
+    }
+
+    public static func reduce(_ state: inout SessionState, event normalized: AgentEvent,
+                              requestID: String?, now: Date) -> [SessionEffect] {
+        let event = normalized.hook
         let key = SessionKey(source: event.source, sessionID: event.sessionID)
         var session = state.sessions[key] ?? Session(key: key, startedAt: now)
         session.lastEventAt = now
+        session.missedProcessPolls = 0
         // A session the watcher found first becomes live the moment its hooks fire.
         session.ingress = .hook
         applyIdentity(&session, from: event)
+        switch normalized.kind {
+        case .permissionRequested, .notification, .heartbeat, .unknown(_):
+            break
+        default:
+            session.hasLifecycleActivity = true
+        }
         let statusBefore = session.status
         var effects: [SessionEffect] = []
 
-        switch event.name {
-        case "SessionStart":
+        switch normalized.kind {
+        case .sessionStarted:
             session.status = .idle
-        case "UserPromptSubmit":
+        case .promptSubmitted:
             session.status = .working
             if let prompt = event.prompt { session.lastPrompt = prompt }
-        case "PreToolUse":
+            effects.append(.sound(.started))
+        case .toolStarted:
             session.status = .runningTool(event.toolName ?? "tool")
             session.currentTool = event.toolName
             session.elapsedToolStart = now
-        case "PostToolUse", "PostToolUseFailure":
+        case .toolFinished, .toolFailed:
             session.currentTool = nil
             session.elapsedToolStart = nil
             if let toolUseID = event.toolUseID {
@@ -32,7 +46,8 @@ public enum SessionReducer {
                 session.pending.removeAll { $0.event.toolUseID == toolUseID }
             }
             session.status = session.pending.last?.status ?? .working
-        case "PermissionRequest":
+            effects.append(.sound(.actionCompleted))
+        case .permissionRequested:
             if let requestID {
                 let request = PendingRequest(requestID: requestID, event: event, receivedAt: now)
                 session.pending.append(request)
@@ -42,26 +57,26 @@ public enum SessionReducer {
             } else if session.pending.isEmpty {
                 session.status = .waitingForApproval
             }
-        case "Notification":
+        case .notification:
             if event.notificationType == "permission_prompt", session.pending.isEmpty {
                 session.status = .waitingForApproval
             }
-        case "PreCompact":
+        case .compactingStarted:
             session.status = .compacting
-        case "PostCompact":
+        case .compactingFinished:
             session.status = .working
-        case "Stop":
+        case .turnCompleted:
             session.status = .done
             session.currentTool = nil
             if let message = event.lastAssistantMessage { session.lastAssistantMessage = message }
             effects.append(.revealCompletion(key))
             effects.append(.sound(.done))
-        case "StopFailure":
+        case .turnFailed:
             session.status = .failed
             session.currentTool = nil
             effects.append(.revealFailure(key))
             effects.append(.sound(.failed))
-        case "SubagentStart":
+        case .subagentStarted:
             let id = subagentID(event)
             let description = (event.raw["agent_type"] as? String) ?? (event.raw["description"] as? String) ?? "subagent"
             if let index = session.subagents.firstIndex(where: { $0.id == id }) {
@@ -69,15 +84,20 @@ public enum SessionReducer {
             } else {
                 session.subagents.append(Subagent(id: id, description: description, status: .working, startedAt: now))
             }
-        case "SubagentStop":
+        case .subagentFinished:
             let id = subagentID(event)
             if let index = session.subagents.firstIndex(where: { $0.id == id }) {
                 session.subagents[index].status = .done
             }
-        case "SessionEnd":
+        case .sessionEnded:
             state.sessions[key] = nil
             return [.removed(key)]
-        default:
+        case .interrupted:
+            // An interrupted turn settles without masquerading as a successful completion card.
+            session.status = .idle
+            session.currentTool = nil
+            session.elapsedToolStart = nil
+        case .heartbeat, .unknown:
             break
         }
 
@@ -93,6 +113,10 @@ public enum SessionReducer {
     public static func clearRequest(_ state: inout SessionState, key: SessionKey, requestID: String) -> [SessionEffect] {
         guard var session = state.sessions[key], session.pending.contains(where: { $0.requestID == requestID }) else { return [] }
         session.pending.removeAll { $0.requestID == requestID }
+        if session.pending.isEmpty, !session.hasLifecycleActivity {
+            state.sessions[key] = nil
+            return [.requestCleared(key, requestID: requestID), .removed(key)]
+        }
         session.status = session.pending.last?.status ?? .working
         state.sessions[key] = session
         return [.requestCleared(key, requestID: requestID)]
@@ -121,7 +145,8 @@ public enum SessionReducer {
 
         let existed = state.sessions[key] != nil
         var session = state.sessions[key] ?? Session(key: key, startedAt: transcript.startedAt)
-        let wasDone = session.status == .done
+        let previousStatus = session.status
+        let wasDone = previousStatus == .done
         session.ingress = .transcript
         session.lastEventAt = transcript.lastActivityAt
         session.cwd = transcript.cwd
@@ -142,9 +167,13 @@ public enum SessionReducer {
         }
         state.sessions[key] = session
 
-        // Only a completion that happens while Reef is watching is worth announcing. A session
-        // that had already ended when the watcher first read it just joins the list.
-        guard status == .done, !wasDone, existed else { return [] }
+        // Only transitions that happen while Reef is watching are worth sounding. A session
+        // already working or done when first discovered joins silently.
+        guard existed else { return [] }
+        if status.animationFamily == .working, previousStatus.animationFamily != .working {
+            return [.sound(.started)]
+        }
+        guard status == .done, !wasDone else { return [] }
         return [.revealCompletion(key), .sound(.done)]
     }
 
@@ -164,6 +193,39 @@ public enum SessionReducer {
         for (key, session) in state.sessions where now.timeIntervalSince(session.lastEventAt) > maxIdle && session.pending.isEmpty {
             state.sessions[key] = nil
             effects.append(.removed(key))
+        }
+        return effects
+    }
+
+    /// Reconciles coarse process discovery with hook sessions. Two misses plus a quiet grace
+    /// period are required so short-lived Codex subprocesses and transient `ps` failures do not
+    /// make cards flicker.
+    public static func reconcileProcessLiveness(_ state: inout SessionState,
+                                                aliveProcessIDs: Set<Int>,
+                                                aliveSources: Set<AgentSource>,
+                                                now: Date,
+                                                quietGrace: TimeInterval = 90) -> [SessionEffect] {
+        var effects: [SessionEffect] = []
+        for (key, var session) in state.sessions where session.ingress == .hook {
+            // The bridge process itself is short-lived; its parent is the agent that invoked the
+            // hook. When that identity is available it is authoritative. Falling back to source
+            // presence is only for old/headless events that carried no usable process identity.
+            let ownerPID = session.terminal.ppid
+            let alive = ownerPID.map(aliveProcessIDs.contains) ?? aliveSources.contains(key.source)
+            if alive {
+                session.missedProcessPolls = 0
+                session.processObservedAt = now
+                state.sessions[key] = session
+                continue
+            }
+            session.missedProcessPolls += 1
+            let quiet = now.timeIntervalSince(session.lastEventAt) >= quietGrace
+            if session.missedProcessPolls >= 2, quiet, session.pending.isEmpty {
+                state.sessions[key] = nil
+                effects.append(.removed(key))
+            } else {
+                state.sessions[key] = session
+            }
         }
         return effects
     }

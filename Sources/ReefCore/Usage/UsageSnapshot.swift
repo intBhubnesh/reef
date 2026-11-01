@@ -65,6 +65,47 @@ public struct UsageSnapshot: Equatable {
         return UsageSnapshot(fiveHour: five, sevenDay: seven, spendLimit: spend, modelName: model, capturedAt: now)
     }
 
+    /// Reads the `event_msg.token_count.rate_limits` record written to Codex rollout JSONL.
+    /// Codex names its windows `primary` and `secondary`, so their duration—not their position—
+    /// determines whether Reef presents them as the five-hour or seven-day allowance.
+    public static func parseCodexEvent(_ data: Data) -> UsageSnapshot? {
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let record = object as? [String: Any],
+              record["type"] as? String == "event_msg",
+              let payload = record["payload"] as? [String: Any],
+              payload["type"] as? String == "token_count",
+              let limits = payload["rate_limits"] as? [String: Any]
+        else { return nil }
+
+        var fiveHour: UsageWindow?
+        var sevenDay: UsageWindow?
+        for key in ["primary", "secondary", "individual_limit"] {
+            guard let raw = limits[key] as? [String: Any],
+                  let minutes = integer(raw["window_minutes"]),
+                  let value = codexWindow(raw)
+            else { continue }
+            switch minutes {
+            case 300: fiveHour = value
+            case 10_080: sevenDay = value
+            default: break
+            }
+        }
+        guard fiveHour != nil || sevenDay != nil else { return nil }
+        return UsageSnapshot(fiveHour: fiveHour, sevenDay: sevenDay,
+                             modelName: nil, capturedAt: codexTimestamp(record) ?? Date())
+    }
+
+    /// Finds the newest complete Codex usage record in a transcript chunk. A chunk can begin in
+    /// the middle of a JSONL record when the app reads only a bounded tail; that fragment simply
+    /// fails parsing and the search continues.
+    public static func latestCodexSnapshot(in data: Data) -> UsageSnapshot? {
+        let lines = data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
+        for line in lines.reversed() {
+            if let snapshot = parseCodexEvent(Data(line)) { return snapshot }
+        }
+        return nil
+    }
+
     private static func window(_ value: Any?) -> UsageWindow? {
         guard let dict = value as? [String: Any] else { return nil }
         guard let percent = dict["used_percentage"] as? Int ?? (dict["used_percentage"] as? Double).map(Int.init) else {
@@ -79,6 +120,33 @@ public struct UsageSnapshot: Equatable {
             resets = Date(timeIntervalSince1970: epoch)
         }
         return UsageWindow(usedPercent: percent, resetsAt: resets)
+    }
+
+    private static func codexWindow(_ raw: [String: Any]) -> UsageWindow? {
+        guard let percent = integer(raw["used_percent"]) else { return nil }
+        let resets = number(raw["resets_at"]).map { Date(timeIntervalSince1970: $0) }
+        return UsageWindow(usedPercent: percent, resetsAt: resets)
+    }
+
+    private static func integer(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? Double { return Int(value) }
+        if let value = value as? NSNumber { return value.intValue }
+        return nil
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        if let value = value as? Double { return value }
+        if let value = value as? Int { return Double(value) }
+        if let value = value as? NSNumber { return value.doubleValue }
+        return nil
+    }
+
+    private static func codexTimestamp(_ record: [String: Any]) -> Date? {
+        guard let raw = record["timestamp"] as? String else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
     }
 }
 

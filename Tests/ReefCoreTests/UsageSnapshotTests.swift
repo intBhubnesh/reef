@@ -81,6 +81,36 @@ final class UsageSnapshotTests: XCTestCase {
                      "a model name with no limits is nothing to show")
     }
 
+    func testParsesCodexPrimaryAndSecondaryByWindowDuration() {
+        let line = #"{"timestamp":"2026-11-01T10:44:04.338Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":12.7,"window_minutes":300,"resets_at":1793520000},"secondary":{"used_percent":41.2,"window_minutes":10080,"resets_at":1794129045}}}}"#
+        let snapshot = UsageSnapshot.parseCodexEvent(data(line))
+        XCTAssertEqual(snapshot?.fiveHour?.usedPercent, 12)
+        XCTAssertEqual(snapshot?.sevenDay?.usedPercent, 41)
+        XCTAssertEqual(snapshot?.sevenDay?.resetsAt, Date(timeIntervalSince1970: 1_794_129_045))
+        XCTAssertEqual(snapshot!.capturedAt.timeIntervalSince1970,
+                       1_793_529_844.338,
+                       accuracy: 0.001)
+    }
+
+    func testParsesCurrentCodexWeeklyOnlyShape() {
+        let line = #"{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":5.0,"window_minutes":10080,"resets_at":1794129045},"secondary":null}}}"#
+        let snapshot = UsageSnapshot.parseCodexEvent(data(line))
+        XCTAssertNil(snapshot?.fiveHour)
+        XCTAssertEqual(snapshot?.sevenDay?.usedPercent, 5)
+    }
+
+    func testLatestCodexSnapshotSkipsOtherAndPartialRecords() {
+        let older = #"{"timestamp":"2026-11-01T10:00:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":4,"window_minutes":10080}}}}"#
+        let newer = #"{"timestamp":"2026-11-01T11:00:00Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":5,"window_minutes":10080}}}}"#
+        let chunk = data("half-record\n\(older)\n{\"type\":\"response_item\"}\n\(newer)\n{\"partial\":")
+        XCTAssertEqual(UsageSnapshot.latestCodexSnapshot(in: chunk)?.sevenDay?.usedPercent, 5)
+    }
+
+    func testCodexUsageRejectsUnrelatedTokenRecords() {
+        XCTAssertNil(UsageSnapshot.parseCodexEvent(data(#"{"type":"event_msg","payload":{"type":"token_count","rate_limits":null}}"#)))
+        XCTAssertNil(UsageSnapshot.parseCodexEvent(data(#"{"type":"response_item","payload":{"rate_limits":{"primary":{"used_percent":5,"window_minutes":10080}}}}"#)))
+    }
+
     func testStatusLineStateDetection() {
         XCTAssertEqual(StatusLineState.of(command: nil), .free)
         XCTAssertEqual(StatusLineState.of(command: ""), .free)

@@ -1,3 +1,4 @@
+import AppKit
 import ReefCore
 import SwiftUI
 
@@ -13,6 +14,140 @@ struct Chip: View {
             .frame(height: Metrics.chipHeight)
             .padding(.horizontal, Metrics.chipPadding)
             .background(background, in: Capsule())
+    }
+}
+
+/// Compact source badge used where the cards previously spelled out "Claude" or "Codex".
+/// The marks come from the bundled, attributed upstream vector assets.
+struct AgentIconChip: View {
+    let source: AgentSource
+    var tint: Color?
+    var background: Color?
+
+    var body: some View {
+        let colors = Theme.chipColors(source)
+        AgentMark(source: source, color: tint ?? colors.text)
+            .frame(width: 11, height: 11)
+            .frame(width: 22, height: Metrics.chipHeight)
+            .background(background ?? colors.background, in: Capsule())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(AgentLabel.name(source))
+            .help(AgentLabel.name(source))
+    }
+}
+
+/// Shared provider mark used by both session chips and the usage header.
+struct AgentMark: View {
+    let source: AgentSource
+    let color: Color
+
+    var body: some View {
+        BundledBrandMark(name: source == .claude ? "Claude" : "Codex",
+                         template: true,
+                         fallbackSymbol: source == .claude ? "sparkles" : "terminal.fill")
+            .foregroundStyle(color)
+    }
+}
+
+/// Terminal host badge. The first supported hosts use icons; unknown hosts keep the existing
+/// text chip until they receive a dedicated mark.
+struct TerminalBadge: View {
+    let terminal: TerminalIdentity
+
+    var body: some View {
+        if let brand = TerminalBrand(terminal) {
+            TerminalIconChip(brand: brand)
+        } else if let name = AgentLabel.terminalName(terminal) {
+            Chip(text: name)
+        }
+    }
+}
+
+private enum TerminalBrand {
+    case terminal
+    case kitty
+    case warp
+    case vscode
+
+    init?(_ terminal: TerminalIdentity) {
+        let program = terminal.termProgram?.lowercased() ?? ""
+        let bundle = terminal.bundleID?.lowercased() ?? ""
+        if program == "kitty" || bundle == "net.kovidgoyal.kitty" { self = .kitty }
+        else if program == "apple_terminal" || bundle == "com.apple.terminal" { self = .terminal }
+        else if program.contains("warp") || bundle.contains("warp") { self = .warp }
+        else if program == "vscode" || bundle == "com.microsoft.vscode" { self = .vscode }
+        else { return nil }
+    }
+
+    var name: String {
+        switch self {
+        case .terminal: return "Terminal"
+        case .kitty: return "Kitty"
+        case .warp: return "Warp"
+        case .vscode: return "VS Code"
+        }
+    }
+}
+
+private struct TerminalIconChip: View {
+    let brand: TerminalBrand
+
+    var body: some View {
+        terminalMark
+            .foregroundStyle(Theme.textSecondary)
+            .frame(width: 11, height: 11)
+            .frame(width: 22, height: Metrics.chipHeight)
+            .background(Theme.chip, in: Capsule())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(brand.name)
+            .help(brand.name)
+    }
+
+    @ViewBuilder private var terminalMark: some View {
+        switch brand {
+        case .terminal:
+            Image(systemName: "terminal.fill")
+                .font(.system(size: 8.5, weight: .semibold))
+        case .kitty:
+            Image(systemName: "cat.fill")
+                .font(.system(size: 9, weight: .semibold))
+        case .warp:
+            BundledBrandMark(name: "Warp", template: true, fallbackSymbol: "w.square.fill")
+        case .vscode:
+            BundledBrandMark(name: "VSCode", fileExtension: "png", template: false,
+                             fallbackSymbol: "chevron.left.forwardslash.chevron.right")
+        }
+    }
+}
+
+/// Loads a bundled rendering of an attributed upstream SVG. Most marks remain vector PDFs;
+/// multicolour artwork can use a high-resolution PNG when AppKit cannot preserve its SVG paint.
+private struct BundledBrandMark: View {
+    let name: String
+    let fileExtension: String
+    let template: Bool
+    let fallbackSymbol: String
+
+    init(name: String, fileExtension: String = "pdf", template: Bool, fallbackSymbol: String) {
+        self.name = name
+        self.fileExtension = fileExtension
+        self.template = template
+        self.fallbackSymbol = fallbackSymbol
+    }
+
+    var body: some View {
+        if let url = Bundle.main.url(forResource: name, withExtension: fileExtension,
+                                     subdirectory: "BrandIcons"),
+           let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .renderingMode(template ? .template : .original)
+                .scaledToFit()
+        } else {
+            Image(systemName: fallbackSymbol)
+                .resizable()
+                .scaledToFit()
+        }
     }
 }
 
@@ -40,6 +175,7 @@ enum AgentLabel {
         case "com.microsoft.VSCode": return "VS Code"
         case "com.googlecode.iterm2": return "iTerm"
         case "com.apple.Terminal": return "Terminal"
+        case .some(let id) where id.lowercased().contains("warp"): return "Warp"
         case .some(let id): return id.split(separator: ".").last.map(String.init)
         case .none: return nil
         }

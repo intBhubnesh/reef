@@ -5,6 +5,7 @@ public enum Enricher {
     public static let envKeys = [
         "TERM_PROGRAM", "TERM_SESSION_ID", "ITERM_SESSION_ID", "KITTY_WINDOW_ID", "KITTY_PID", "KITTY_LISTEN_ON",
         "GHOSTTY_RESOURCES_DIR", "TMUX", "TMUX_PANE", "VSCODE_PID", "__CFBundleIdentifier",
+        "WEZTERM_PANE",
     ]
 
     public static func enrich(event raw: [String: Any], source: AgentSource, env: [String: String], tty: String?,

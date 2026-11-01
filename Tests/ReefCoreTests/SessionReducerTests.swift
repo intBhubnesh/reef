@@ -36,6 +36,15 @@ final class SessionReducerTests: XCTestCase {
         XCTAssertEqual(effects, [.revealCompletion(key), .sound(.done)])
     }
 
+    func testWorkStartAndActionCompletionHaveDistinctSounds() {
+        var state = SessionState()
+        _ = apply(&state, event("SessionStart"))
+        XCTAssertEqual(apply(&state, event("UserPromptSubmit")), [.sound(.started)])
+        _ = apply(&state, event("PreToolUse", extra: ["tool_name": "Bash", "tool_use_id": "t1"]))
+        XCTAssertEqual(apply(&state, event("PostToolUse", extra: ["tool_name": "Bash", "tool_use_id": "t1"])),
+                       [.sound(.actionCompleted)])
+    }
+
     func testPermissionRequestAddsPendingAndSound() {
         var s = SessionState()
         _ = apply(&s, event("SessionStart"))
@@ -110,10 +119,19 @@ final class SessionReducerTests: XCTestCase {
 
     func testClearRequestRestoresWorkingAndCollapsesStatus() {
         var s = SessionState()
+        _ = apply(&s, event("SessionStart"))
         _ = apply(&s, event("PermissionRequest", extra: ["tool_name": "Bash", "tool_use_id": "t1"]), requestID: "r1")
         let effects = SessionReducer.clearRequest(&s, key: key, requestID: "r1")
         XCTAssertEqual(effects, [.requestCleared(key, requestID: "r1")])
         XCTAssertEqual(s.sessions[key]?.status, .working)
+    }
+
+    func testStandaloneRequestIsRemovedAfterItIsAnswered() {
+        var s = SessionState()
+        _ = apply(&s, event("PermissionRequest", extra: ["tool_name": "AskUserQuestion"]), requestID: "r1")
+        XCTAssertEqual(SessionReducer.clearRequest(&s, key: key, requestID: "r1"),
+                       [.requestCleared(key, requestID: "r1"), .removed(key)])
+        XCTAssertNil(s.sessions[key])
     }
 
     func testReleasedRequestStaysVisibleReadOnly() {
@@ -301,5 +319,52 @@ final class SessionReducerTests: XCTestCase {
         _ = apply(&s, event("UserPromptSubmit", session: "a"))
         XCTAssertEqual(s.sessions[keyA]?.animationSeed, a1)
         XCTAssertNotEqual(a1, s.sessions[SessionKey(source: .claude, sessionID: "b")]?.animationSeed)
+    }
+
+    func testAgentEventAdapterNormalizesAlternateSpellings() {
+        XCTAssertEqual(AgentEventAdapter.normalize(event("tool_execution_start")).kind, .toolStarted)
+        XCTAssertEqual(AgentEventAdapter.normalize(event("agent_settled")).kind, .turnCompleted)
+        XCTAssertEqual(AgentEventAdapter.normalize(event("StopCancelled")).kind, .interrupted)
+    }
+
+    func testInterruptedTurnDoesNotRevealACompletion() {
+        var s = SessionState()
+        _ = apply(&s, event("UserPromptSubmit"))
+        let effects = apply(&s, event("Interrupt"))
+        XCTAssertEqual(s.sessions[key]?.status, .idle)
+        XCTAssertFalse(effects.contains(.revealCompletion(key)))
+    }
+
+    func testProcessLivenessRequiresTwoQuietMisses() {
+        var s = SessionState()
+        _ = apply(&s, event("SessionStart"), at: 0)
+        let late = t0.addingTimeInterval(200)
+        XCTAssertEqual(SessionReducer.reconcileProcessLiveness(&s, aliveProcessIDs: [], aliveSources: [], now: late), [])
+        XCTAssertEqual(s.sessions[key]?.missedProcessPolls, 1)
+        XCTAssertEqual(SessionReducer.reconcileProcessLiveness(&s, aliveProcessIDs: [], aliveSources: [], now: late.addingTimeInterval(2)),
+                       [.removed(key)])
+        XCTAssertNil(s.sessions[key])
+    }
+
+    func testProcessObservationResetsMissCounter() {
+        var s = SessionState()
+        _ = apply(&s, event("SessionStart"), at: 0)
+        _ = SessionReducer.reconcileProcessLiveness(&s, aliveProcessIDs: [], aliveSources: [], now: t0.addingTimeInterval(200))
+        _ = SessionReducer.reconcileProcessLiveness(&s, aliveProcessIDs: [], aliveSources: [.claude], now: t0.addingTimeInterval(201))
+        XCTAssertEqual(s.sessions[key]?.missedProcessPolls, 0)
+        XCTAssertEqual(s.sessions[key]?.processObservedAt, t0.addingTimeInterval(201))
+    }
+
+
+    func testPerSessionParentProcessBeatsCoarseSourcePresence() {
+        var s = SessionState()
+        let identified = event("SessionStart", extra: ["reef": ["pid": 101, "ppid": 42, "env": [:]]])
+        _ = apply(&s, identified, at: 0)
+        let late = t0.addingTimeInterval(200)
+        _ = SessionReducer.reconcileProcessLiveness(&s, aliveProcessIDs: [], aliveSources: [.claude], now: late)
+        XCTAssertEqual(s.sessions[key]?.missedProcessPolls, 1,
+                       "another Claude process must not keep this dead session alive")
+        _ = SessionReducer.reconcileProcessLiveness(&s, aliveProcessIDs: [42], aliveSources: [], now: late.addingTimeInterval(1))
+        XCTAssertEqual(s.sessions[key]?.missedProcessPolls, 0)
     }
 }

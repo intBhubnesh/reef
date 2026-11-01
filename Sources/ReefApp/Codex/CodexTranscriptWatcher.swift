@@ -12,6 +12,10 @@ final class CodexTranscriptWatcher {
     static let lookback: TimeInterval = 30 * 60
     /// Most bytes read from one file in one pass.
     static let readChunk = 1 << 20
+    /// On first sight of a large, long-running VS Code thread, read its head for metadata and
+    /// its recent tail for the current turn. Replaying a 50–200 MB transcript from byte zero can
+    /// leave Reef showing an hours-old "Done" state while Codex is visibly working.
+    static let initialTailRead = 32 << 20
 
     private struct Entry {
         var offset: UInt64 = 0
@@ -49,6 +53,27 @@ final class CodexTranscriptWatcher {
         for (url, modified) in recentTranscripts() {
             var entry = entries[url.path] ?? Entry()
             guard !entry.ignored else { continue }
+
+            if entry.offset == 0, entry.session == nil {
+                switch seedEntry(at: url) {
+                case let .ready(session, offset):
+                    entry.session = session
+                    entry.offset = offset
+                    var current = session
+                    current.lastActivityAt = max(current.lastActivityAt, modified)
+                    entry.session = current
+                    entries[url.path] = entry
+                    onSession(current)
+                case .ignored:
+                    entry.ignored = true
+                    entries[url.path] = entry
+                    Log.info("codex", "ignoring transcript", ["file": url.lastPathComponent])
+                case .retry:
+                    break
+                }
+                continue
+            }
+
             guard let (lines, newOffset) = readNewLines(at: url, from: entry.offset) else {
                 // Rotated or truncated under us: the session we folded no longer matches the file.
                 entries[url.path] = Entry()
@@ -85,6 +110,49 @@ final class CodexTranscriptWatcher {
             entries[url.path] = entry
             if changed, let session = entry.session { onSession(session) }
         }
+    }
+
+    private enum SeedResult {
+        case ready(TranscriptSession, UInt64)
+        case ignored
+        case retry
+    }
+
+    /// Builds a current snapshot without replaying an unbounded transcript. The first chunk
+    /// supplies `session_meta`; for a large file the latest 32 MB supplies the newest lifecycle
+    /// record (`task_started`, `task_complete`, or `turn_aborted`) and assistant output. Future
+    /// polls resume at the last complete newline near EOF.
+    private func seedEntry(at url: URL) -> SeedResult {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return .retry }
+        defer { try? handle.close() }
+        guard let end = try? handle.seekToEnd(), end > 0,
+              (try? handle.seek(toOffset: 0)) != nil,
+              let head = try? handle.read(upToCount: Self.readChunk), !head.isEmpty
+        else { return .retry }
+
+        let (headLines, headConsumed) = CodexTranscript.completeLines(in: head)
+        guard let meta = headLines.first else { return .retry }
+        guard var session = CodexTranscript.begin(metaLine: meta) else { return .ignored }
+        for line in headLines.dropFirst() { CodexTranscript.fold(&session, line) }
+
+        var offset = UInt64(headConsumed)
+        guard end > offset else { return .ready(session, offset) }
+
+        // Small files continue directly after the head. Large files jump to a bounded recent
+        // window; its first fragment may begin mid-record and is harmlessly ignored by `fold`.
+        let tailCapacity = UInt64(Self.initialTailRead)
+        let tailStart = end > tailCapacity ? max(offset, end - tailCapacity) : offset
+        guard (try? handle.seek(toOffset: tailStart)) != nil,
+              let tail = try? handle.read(upToCount: Int(end - tailStart)), !tail.isEmpty
+        else { return .ready(session, offset) }
+        let (tailLines, tailConsumed) = CodexTranscript.completeLines(in: tail)
+        for line in tailLines { CodexTranscript.fold(&session, line) }
+
+        // If the only recent record is larger than the bounded window, skip that partial record
+        // rather than getting permanently stuck rereading the same bytes. The next complete
+        // append will be processed normally.
+        offset = tailConsumed > 0 ? tailStart + UInt64(tailConsumed) : end
+        return .ready(session, offset)
     }
 
     /// Transcript files under the date folders with their modification dates, newest first,

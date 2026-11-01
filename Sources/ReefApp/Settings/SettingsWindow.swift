@@ -29,13 +29,18 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 }
 
 @MainActor
-final class SettingsWindowController {
+final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let state: AppState
 
-    init(state: AppState) { self.state = state }
+    init(state: AppState) {
+        self.state = state
+        super.init()
+    }
 
-    func show() {
+    var isVisible: Bool { window?.isVisible == true }
+
+    func show(tab: SettingsTab = .general) {
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 680),
                              styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
@@ -43,17 +48,35 @@ final class SettingsWindowController {
             w.title = "Reef Settings"
             w.titlebarAppearsTransparent = true
             w.isReleasedWhenClosed = false
+            // Reef is an accessory app with no Dock icon. A normal-level settings window falls
+            // behind the user's editor as soon as focus changes and becomes effectively
+            // unreachable. Keep this utility above normal app windows without putting it above
+            // alerts or system UI.
+            w.level = .floating
+            w.hidesOnDeactivate = false
+            w.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            w.delegate = self
             w.center()
-            w.contentView = NSHostingView(rootView: SettingsRootView().environment(state))
+            w.contentView = NSHostingView(rootView: SettingsRootView(initialTab: tab).environment(state))
             window = w
         }
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
+        Log.info("ui", "settings shown", ["level": "floating"])
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        Log.info("ui", "settings closed")
     }
 }
 
 struct SettingsRootView: View {
-    @State private var tab: SettingsTab = .general
+    @State private var tab: SettingsTab
+
+    init(initialTab: SettingsTab = .general) {
+        _tab = State(initialValue: initialTab)
+    }
 
     var body: some View {
         NavigationSplitView {

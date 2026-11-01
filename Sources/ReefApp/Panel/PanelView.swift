@@ -22,16 +22,7 @@ struct PanelView: View {
                                    message: notice,
                                    dismiss: { app.notice = nil })
                     }
-                    ForEach(app.pendingRequests, id: \.request.requestID) { entry in
-                        card(for: entry.request, in: entry.session)
-                    }
-                    ForEach(app.visibleSessions.filter { $0.pending.isEmpty }, id: \.key) { session in
-                        if app.revealedKeys.contains(session.key), session.status == .done || session.status == .failed {
-                            CompletionCardView(session: session)
-                        } else {
-                            SessionCardView(session: session, namespace: namespace)
-                        }
-                    }
+                    surfaceContent
                     if app.visibleSessions.isEmpty, app.notice == nil {
                         Text("Start Claude Code or Codex in a terminal and it will show up here.")
                             .font(Theme.body)
@@ -48,6 +39,63 @@ struct PanelView: View {
             .frame(maxHeight: maxHeight - Metrics.headerHeight - Metrics.bottomInset)
         }
         .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    @ViewBuilder
+    private var surfaceContent: some View {
+        switch app.notch.surface {
+        case let .approval(requestID), let .question(requestID), let .plan(requestID):
+            if let entry = requestEntry(requestID) {
+                card(for: entry.request, in: entry.session)
+            } else {
+                sessionList(actionableRequestID: nil)
+            }
+        case let .completion(key), let .failure(key):
+            if let session = app.visibleSessions.first(where: { $0.key == key }),
+               session.status == .done || session.status == .failed {
+                CompletionCardView(session: session)
+            } else {
+                sessionList(actionableRequestID: nil)
+            }
+        case let .sessionList(actionableRequestID):
+            sessionList(actionableRequestID: actionableRequestID)
+        }
+    }
+
+    @ViewBuilder
+    private func sessionList(actionableRequestID: String?) -> some View {
+        // A session is one agent, so it gets one card. Prefer the explicitly routed request,
+        // then the oldest live request; stale/read-only history must never multiply cards.
+        ForEach(displayRequests(preferredID: actionableRequestID), id: \.request.requestID) { entry in
+            card(for: entry.request, in: entry.session)
+        }
+        ForEach(app.visibleSessions.filter { $0.pending.isEmpty }, id: \.key) { session in
+            if app.revealedKeys.contains(session.key), session.status == .done || session.status == .failed {
+                CompletionCardView(session: session)
+            } else {
+                SessionCardView(session: session, namespace: namespace)
+            }
+        }
+    }
+
+    private func requestEntry(_ requestID: String) -> (session: Session, request: PendingRequest)? {
+        app.pendingRequests.first { $0.request.requestID == requestID }
+    }
+
+    private func displayRequests(preferredID: String?) -> [(session: Session, request: PendingRequest)] {
+        var result: [(session: Session, request: PendingRequest)] = []
+        var represented = Set<SessionKey>()
+
+        if let preferredID, let preferred = requestEntry(preferredID) {
+            result.append(preferred)
+            represented.insert(preferred.session.key)
+        }
+        for session in app.visibleSessions where !represented.contains(session.key) {
+            guard let request = session.pending.first(where: \.isLive) ?? session.pending.last else { continue }
+            result.append((session, request))
+            represented.insert(session.key)
+        }
+        return result
     }
 
     @ViewBuilder

@@ -97,6 +97,14 @@ public struct Session: Equatable {
     public var pending: [PendingRequest]
     public var elapsedToolStart: Date?
     public var ingress: SessionIngress = .hook
+    /// Process discovery is authoritative only after two consecutive misses; hooks continue to
+    /// enrich the session and reset this counter immediately.
+    public var missedProcessPolls = 0
+    public var processObservedAt: Date?
+    /// True once Reef has seen evidence of an actual agent lifecycle beyond a standalone
+    /// permission/question hook. A hook-only request may be a probe or test fixture and should
+    /// disappear as soon as its request is resolved instead of becoming a phantom worker.
+    public var hasLifecycleActivity = false
 
     public init(key: SessionKey, startedAt: Date) {
         self.key = key
@@ -126,7 +134,13 @@ public struct Session: Equatable {
 /// sessions are a read-only record of a front end that does not run hooks, such as VS Code.
 public enum SessionIngress: String, Codable, Equatable { case hook, transcript }
 
-public enum SoundKind: String, Codable { case inputNeeded, done, failed }
+public enum SoundKind: String, Codable {
+    case started
+    case actionCompleted
+    case inputNeeded
+    case done
+    case failed
+}
 
 public enum SessionEffect: Equatable {
     case revealCompletion(SessionKey)

@@ -7,12 +7,20 @@ import SwiftUI
 struct HeaderRow: View {
     let namespace: Namespace.ID
     @Environment(AppState.self) private var app
-    @State private var hoveringUsage = false
+    @State private var hoveringClaudeUsage = false
+    @State private var hoveringCodexUsage = false
 
     var body: some View {
         HStack(spacing: 0) {
-            if let usage = app.usage {
-                usageBlock(usage)
+            if app.usage != nil || app.codexUsage != nil {
+                HStack(spacing: 2) {
+                    if let usage = app.usage {
+                        usageBlock(usage, source: .claude, hovering: $hoveringClaudeUsage)
+                    }
+                    if let usage = app.codexUsage {
+                        usageBlock(usage, source: .codex, hovering: $hoveringCodexUsage)
+                    }
+                }
             } else {
                 Text(fallbackTitle)
                     .font(Theme.body.weight(.semibold))
@@ -26,6 +34,23 @@ struct HeaderRow: View {
                 modelBlock(model, usage: usage)
                     .padding(.trailing, Metrics.headerModelGap - Metrics.headerMuteSize / 2)
             }
+
+            Menu {
+                Button("Clear inactive agents", systemImage: "checkmark.circle") {
+                    app.dismissInactiveSessions()
+                }
+                Button("Clear all agents", systemImage: "trash") {
+                    app.dismissAllSessions()
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: Metrics.headerMuteSize, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: Metrics.headerControlGap, height: Metrics.headerHeight)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .help("Agent controls")
 
             Button { app.muted.toggle() } label: {
                 Image(systemName: app.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -50,17 +75,20 @@ struct HeaderRow: View {
     // MARK: - Left block
 
     @ViewBuilder
-    private func usageBlock(_ usage: UsageSnapshot) -> some View {
+    private func usageBlock(_ usage: UsageSnapshot, source: AgentSource,
+                            hovering: Binding<Bool>) -> some View {
         let stale = usage.isStale()
+        let colors = Theme.chipColors(source)
         HStack(spacing: Metrics.headerIconGap) {
             RoundedRectangle(cornerRadius: Metrics.headerIconSize * 0.42, style: .continuous)
-                .fill(stale ? Theme.textTertiary : Theme.waiting)
+                .fill(colors.background)
                 .frame(width: Metrics.headerIconSize, height: Metrics.headerIconSize)
                 .overlay(
-                    Image(systemName: "sparkle")
-                        .font(.system(size: Metrics.headerIconSize * 0.62, weight: .bold))
-                        .foregroundStyle(.white)
+                    AgentMark(source: source, color: colors.text)
+                        .frame(width: Metrics.headerIconSize * 0.78,
+                               height: Metrics.headerIconSize * 0.78)
                 )
+                .opacity(stale ? 0.72 : 1)
             if let five = usage.fiveHour { window("5h", five, stale: stale) }
             if usage.fiveHour != nil, usage.sevenDay != nil {
                 Rectangle()
@@ -74,11 +102,16 @@ struct HeaderRow: View {
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: Metrics.headerHighlightRadius, style: .continuous)
-                .fill(hoveringUsage ? Theme.headerHighlight : .clear)
+                .fill(hovering.wrappedValue ? Theme.headerHighlight : .clear)
         )
-        .onHover { hoveringUsage = $0 }
-        .help(stale ? "Usage last read \(Format.elapsed(since: usage.capturedAt)) ago"
-                    : "Claude Code rate limits for this account")
+        .onHover { hovering.wrappedValue = $0 }
+        .help(usageHelp(source: source, usage: usage, stale: stale))
+    }
+
+    private func usageHelp(source: AgentSource, usage: UsageSnapshot, stale: Bool) -> String {
+        let provider = source == .claude ? "Claude Code" : "Codex"
+        return stale ? "\(provider) usage last read \(Format.elapsed(since: usage.capturedAt)) ago"
+                     : "\(provider) rate limits for this account"
     }
 
     @ViewBuilder

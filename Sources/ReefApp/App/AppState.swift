@@ -26,9 +26,39 @@ final class AppState {
     var contentRevealed = false
     /// Claude Code's rate limits, when the status-line shim is feeding them.
     var usage: UsageSnapshot?
+    /// Codex account limits recovered from recent rollout transcript token-count records.
+    var codexUsage: UsageSnapshot?
     @ObservationIgnored private var usageReader: UsageReader?
+    @ObservationIgnored private var codexUsageReader: CodexUsageReader?
     @ObservationIgnored private var codexWatcher: CodexTranscriptWatcher?
     @ObservationIgnored let sounds = SoundPlayer()
+    @ObservationIgnored private let barkClient = BarkClient()
+    @ObservationIgnored private var isLoadingBarkCredential = false
+    var barkDeviceKey = "" {
+        didSet {
+            guard barkDeviceKey != oldValue, !isLoadingBarkCredential else { return }
+            if !BarkCredentialStore.save(barkDeviceKey) {
+                barkStatus = "Could not save the device key in Keychain."
+            }
+        }
+    }
+    var barkStatus: String?
+    var barkTestInProgress = false
+
+    /// Keychain may present an authorization prompt after an ad-hoc development rebuild. Never
+    /// let that synchronous Security call block applicationDidFinishLaunching, the socket, or
+    /// the notch. A production-signed update normally completes this without showing anything.
+    func loadBarkCredential() {
+        Task { [weak self] in
+            let stored = await Task.detached(priority: .userInitiated) {
+                BarkCredentialStore.load()
+            }.value
+            guard let self, self.barkDeviceKey.isEmpty, !stored.isEmpty else { return }
+            self.isLoadingBarkCredential = true
+            self.barkDeviceKey = stored
+            self.isLoadingBarkCredential = false
+        }
+    }
 
     var muted: Bool { get { settings.muted } set { settings.muted = newValue } }
     var showHeadless: Bool { settings.showHeadless }
@@ -36,6 +66,15 @@ final class AppState {
     var showBranch: Bool { settings.showBranch }
     var showSubagents: Bool { settings.showSubagents }
     var idleCleanup: TimeInterval { settings.idleCleanupHours * 3600 }
+
+    func avatarEmotion(for slot: AvatarStatusSlot) -> AvatarEmotion {
+        settings.avatarEmotionByStatus[slot.rawValue]
+            .flatMap(AvatarEmotion.init(rawValue:)) ?? slot.defaultEmotion
+    }
+
+    func setAvatarEmotion(_ emotion: AvatarEmotion, for slot: AvatarStatusSlot) {
+        settings.avatarEmotionByStatus[slot.rawValue] = emotion.rawValue
+    }
 
     @ObservationIgnored let pending = PendingRequests()
     @ObservationIgnored let jumpEngine = JumpEngine()
@@ -45,9 +84,13 @@ final class AppState {
     @ObservationIgnored private let serverQueue = DispatchQueue(label: "app.reef.socket")
     @ObservationIgnored private var deadlineTimer: Timer?
     @ObservationIgnored private var housekeepingTimer: Timer?
+    @ObservationIgnored private var processMonitor: ProcessLivenessMonitor?
+    @ObservationIgnored private var socketRetryTimer: Timer?
     @ObservationIgnored var onStateChanged: (() -> Void)?
 
-    static let waitDeadline: TimeInterval = 3600
+    static func waitDeadline(for source: AgentSource) -> TimeInterval {
+        source == .claude ? 86_400 : 3_600
+    }
 
     init() {
         let loaded = ReefSettings.load(from: Paths.settingsFile)
@@ -63,20 +106,49 @@ final class AppState {
 
     // MARK: - Lifecycle
 
-    func start() {
-        do {
-            try server.start()
-            Log.info("socket", "listening", ["path": Paths.socketPath])
-        } catch {
-            Log.warn("socket", "failed to listen", ["path": Paths.socketPath, "error": "\(error)"])
-        }
+    func start(backgroundServices: Bool = true) {
+        guard backgroundServices else { return }
+        startSocketServer()
         housekeepingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.housekeeping() }
         }
         let reader = UsageReader { [weak self] snapshot in self?.usage = snapshot }
         reader.start()
         usageReader = reader
+        let codexReader = CodexUsageReader(root: Paths.codexSessions) { [weak self] snapshot in
+            self?.codexUsage = snapshot
+        }
+        codexReader.start()
+        codexUsageReader = codexReader
         syncCodexWatcher()
+        let monitor = ProcessLivenessMonitor(hasActiveSessions: { [weak self] in
+            self?.sessions.isEmpty == false
+        }, onSnapshot: { [weak self] sources in
+            guard let self else { return }
+            self.apply(SessionReducer.reconcileProcessLiveness(&self.sessionState,
+                                                               aliveProcessIDs: sources.processIDs,
+                                                               aliveSources: sources.sources, now: Date()))
+        })
+        monitor.start()
+        processMonitor = monitor
+    }
+
+    /// A rebuild briefly overlaps the outgoing and incoming app processes. If the old listener
+    /// still owns the hook socket, keep retrying until shutdown releases it instead of leaving
+    /// the new Reef instance permanently blind to agent events.
+    private func startSocketServer() {
+        do {
+            try server.start()
+            socketRetryTimer?.invalidate()
+            socketRetryTimer = nil
+            Log.info("socket", "listening", ["path": Paths.socketPath])
+        } catch {
+            Log.warn("socket", "failed to listen", ["path": Paths.socketPath, "error": "\(error)"])
+            guard socketRetryTimer == nil else { return }
+            socketRetryTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.startSocketServer() }
+            }
+        }
     }
 
     /// Starts or stops transcript watching to match the setting, clearing watched sessions when
@@ -106,8 +178,12 @@ final class AppState {
     }
 
     func stop() {
+        socketRetryTimer?.invalidate()
+        socketRetryTimer = nil
         codexWatcher?.stop()
         usageReader?.stop()
+        codexUsageReader?.stop()
+        processMonitor?.stop()
         pending.releaseAll()
         server.stop()
         deadlineTimer?.invalidate()
@@ -143,11 +219,12 @@ final class AppState {
         let requestID: String? = request.mode == .wait ? request.id : nil
         if request.mode == .wait {
             pending.add(requestID: request.id, key: key, connection: connection,
-                        deadline: Date().addingTimeInterval(Self.waitDeadline))
+                        deadline: Date().addingTimeInterval(Self.waitDeadline(for: source)))
         }
         Log.info("session", "recv", ["event": event.name, "source": sourceRaw, "session": String(event.sessionID.prefix(8)),
                                      "tool": event.toolName ?? ""])
-        let effects = SessionReducer.reduce(&sessionState, event: event, requestID: requestID, now: Date())
+        let normalized = AgentEventAdapter.normalize(event)
+        let effects = SessionReducer.reduce(&sessionState, event: normalized, requestID: requestID, now: Date())
         rememberTerminal(for: key)
         apply(effects)
     }
@@ -179,7 +256,10 @@ final class AppState {
 
     private func releaseToTerminal(requestID: String, key: SessionKey) {
         pending.release(requestID: requestID)
-        SessionReducer.markReleased(&sessionState, key: key, requestID: requestID)
+        // Once ownership returns to the editor/terminal, Reef can no longer answer this
+        // request. Keeping a read-only copy made one agent accumulate a card for every command.
+        // Remove it from the session; the normal session card still represents the agent.
+        apply(SessionReducer.clearRequest(&sessionState, key: key, requestID: requestID))
         Log.info("session", "request released to terminal", ["request": requestID])
     }
 
@@ -205,22 +285,49 @@ final class AppState {
                     // The user is already looking at that terminal: hand the prompt back and only peek the card.
                     releaseToTerminal(requestID: request.requestID, key: key)
                     syncPendingCount()
-                    notch.apply(.taskComplete(now))
+                    if notch.state == .closed || isTransientNotch {
+                        notch.apply(.present(.sessionList(actionableRequestID: request.requestID),
+                                             reason: .completion, at: now))
+                    }
                 } else {
+                    sendBark(kind: .inputNeeded, session: session, request: request)
                     syncPendingCount()
-                    notch.apply(.requestArrived(now))
+                    let surface: ReefSurface
+                    switch request.kind {
+                    case .permission: surface = .approval(requestID: request.requestID)
+                    case .question: surface = .question(requestID: request.requestID)
+                    case .plan: surface = .plan(requestID: request.requestID)
+                    }
+                    notch.apply(.present(surface, reason: .blockingRequest, at: now))
                 }
             case let .requestCleared(_, requestID):
                 pending.release(requestID: requestID)
                 syncPendingCount()
                 notch.apply(.requestsCleared(now))
+                if let next = pendingRequests.first(where: { $0.request.isLive }) {
+                    let surface: ReefSurface
+                    switch next.request.kind {
+                    case .permission: surface = .approval(requestID: next.request.requestID)
+                    case .question: surface = .question(requestID: next.request.requestID)
+                    case .plan: surface = .plan(requestID: next.request.requestID)
+                    }
+                    notch.apply(.present(surface, reason: .blockingRequest, at: now))
+                }
             case let .revealCompletion(key):
                 revealedKeys.insert(key)
-                schedulePeek { [weak self] in self?.notch.apply(.taskComplete(Date())) }
+                if let session = sessionState.sessions[key] { sendBark(kind: .done, session: session) }
+                schedulePeek { [weak self] in
+                    guard let self, self.notch.state == .closed || self.isTransientNotch else { return }
+                    self.notch.apply(.present(.completion(key), reason: .completion, at: Date()))
+                }
                 notifyIfAllFinished()
             case let .revealFailure(key):
                 revealedKeys.insert(key)
-                schedulePeek { [weak self] in self?.notch.apply(.taskFailed(Date())) }
+                if let session = sessionState.sessions[key] { sendBark(kind: .failed, session: session) }
+                schedulePeek { [weak self] in
+                    guard let self, self.notch.state == .closed || self.isTransientNotch else { return }
+                    self.notch.apply(.present(.failure(key), reason: .failure, at: Date()))
+                }
             case let .sound(kind):
                 let enabled = settings.soundEnabled(kind)
                 Log.info("sound", kind.rawValue, ["played": enabled ? "1" : "0"])
@@ -256,6 +363,84 @@ final class AppState {
         }
     }
 
+    // MARK: - Bark
+
+    var barkIsConfigured: Bool {
+        !barkDeviceKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (try? BarkClient.request(configuration: barkConfiguration,
+                                        message: BarkMessage(title: "Reef", body: "Validation"))) != nil
+    }
+
+    func testBark() {
+        guard !barkTestInProgress else { return }
+        barkTestInProgress = true
+        barkStatus = "Sending…"
+        let configuration = barkConfiguration
+        let message = BarkMessage(title: "Reef test",
+                                  body: "Bark notifications are connected to this Mac.",
+                                  level: settings.barkNotificationLevel,
+                                  sound: settings.barkSound)
+        Task { [weak self, barkClient] in
+            do {
+                try await barkClient.send(configuration: configuration, message: message)
+                guard let self else { return }
+                self.barkStatus = "Sent to your iPhone."
+                Log.info("bark", "test sent")
+            } catch {
+                guard let self else { return }
+                self.barkStatus = error.localizedDescription
+                Log.warn("bark", "test failed", ["error": error.localizedDescription])
+            }
+            self?.barkTestInProgress = false
+        }
+    }
+
+    private var barkConfiguration: BarkConfiguration {
+        BarkConfiguration(serverURL: settings.barkServerURL, deviceKey: barkDeviceKey)
+    }
+
+    private func sendBark(kind: SoundKind, session: Session, request: PendingRequest? = nil) {
+        guard settings.barkEnabled(kind), barkIsConfigured else { return }
+        let subject = session.project ?? (session.key.source == .claude ? "Claude" : "Codex")
+        let title: String
+        var body: String
+        let level: BarkNotificationLevel
+        switch kind {
+        case .started, .actionCompleted:
+            return
+        case .inputNeeded:
+            title = "Reef · Input needed"
+            level = settings.barkNotificationLevel
+            switch request?.kind {
+            case .question: body = "\(subject) has a question for you."
+            case .plan: body = "\(subject) has a plan ready for review."
+            case .permission:
+                let tool = request?.event.toolName ?? "a tool"
+                body = "\(subject) needs approval for \(tool)."
+            case .none: body = "\(subject) needs your input."
+            }
+        case .done:
+            title = "Reef · Agent finished"
+            body = "\(subject) finished its turn."
+            level = settings.barkNotificationLevel
+        case .failed:
+            title = "Reef · Agent failed"
+            body = "\(subject) ended with an error."
+            level = settings.barkNotificationLevel
+        }
+        let configuration = barkConfiguration
+        let message = BarkMessage(title: title, body: body, level: level, sound: settings.barkSound)
+        Task { [barkClient] in
+            do {
+                try await barkClient.send(configuration: configuration, message: message)
+                Log.info("bark", "notification sent", ["kind": kind.rawValue])
+            } catch {
+                Log.warn("bark", "notification failed", ["kind": kind.rawValue,
+                                                           "error": error.localizedDescription])
+            }
+        }
+    }
+
     /// A completion peek opens a beat after the panel settles rather than the instant the turn
     /// ends (M8), so finishing reads as a separate event instead of a jump.
     @ObservationIgnored private var peekWorkItem: DispatchWorkItem?
@@ -283,9 +468,18 @@ final class AppState {
         stateDidChange()
     }
 
+    func surfaceEntered() {
+        notch.apply(.surfaceEntered(Date()))
+    }
+
     func click() { notch.apply(.click(Date())); stateDidChange() }
     func outsideClick() { notch.apply(.outsideClick(Date())); stateDidChange() }
     func escape() { notch.apply(.escape(Date())); stateDidChange() }
+
+    private var isTransientNotch: Bool {
+        if case .transient = notch.state { return true }
+        return false
+    }
 
     /// Presentations are computed once per request (diffs can be large), never per render.
     @ObservationIgnored private var presentations: [String: ApprovalPresentation] = [:]
@@ -380,6 +574,29 @@ final class AppState {
         Task { await jumpEngine.run(steps) }
     }
 
+    func dismiss(session: Session) {
+        dismissSessions([session.key], reason: "user")
+    }
+
+    func dismissInactiveSessions() {
+        let keys = sessions.filter { session in
+            session.pending.isEmpty && [.idle, .done, .failed].contains(session.status)
+        }.map(\.key)
+        dismissSessions(keys, reason: "inactive")
+    }
+
+    func dismissAllSessions() {
+        dismissSessions(sessions.map(\.key), reason: "all")
+    }
+
+    private func dismissSessions(_ keys: [SessionKey], reason: String) {
+        let existing = keys.filter { sessionState.sessions[$0] != nil }
+        guard !existing.isEmpty else { return }
+        for key in existing { sessionState.sessions[key] = nil }
+        Log.info("session", "dismissed", ["count": "\(existing.count)", "reason": reason])
+        apply(existing.map(SessionEffect.removed))
+    }
+
     @ObservationIgnored var onOpenSettings: (() -> Void)?
     var notice: String?
 
@@ -399,18 +616,20 @@ final class AppState {
     // MARK: Hooks
 
     var installedHookSources: [AgentSource] {
-        settings.hooksInstalledByUser.compactMap(AgentSource.init(rawValue:))
+        AgentSource.allCases.filter { settings.hookIntent(for: $0) == .installed }
     }
 
     func installHooks(_ source: AgentSource) -> String? {
         if let error = HookInstaller.install(source) { return error }
         if !settings.hooksInstalledByUser.contains(source.rawValue) { settings.hooksInstalledByUser.append(source.rawValue) }
+        settings.hookIntentBySource[source.rawValue] = HookIntent.installed.rawValue
         return nil
     }
 
     func uninstallHooks(_ source: AgentSource) -> String? {
         if let error = HookInstaller.uninstall(source) { return error }
         settings.hooksInstalledByUser.removeAll { $0 == source.rawValue }
+        settings.hookIntentBySource[source.rawValue] = HookIntent.uninstalled.rawValue
         return nil
     }
 
@@ -418,6 +637,97 @@ final class AppState {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
               let size = attrs[.size] as? Int, size < 1_000_000 else { return nil }
         return try? String(contentsOfFile: path, encoding: .utf8)
+    }
+
+    // MARK: - Deterministic interaction harness
+
+    /// Seeds the real reducer and UI without requiring Accessibility-driven synthetic input.
+    /// Used by scripts/harness.sh for repeatable screenshots and smoke runs.
+    func loadHarnessScenario(_ name: String) {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func event(_ eventName: String, tool: String? = nil, extra: [String: Any] = [:]) -> HookEvent? {
+            var json: [String: Any] = [
+                "hook_event_name": eventName,
+                "session_id": "reef-harness-session",
+                "cwd": "/tmp/reef-harness",
+                "model": "Harness",
+                "reef": ["tty": "/dev/ttys999",
+                         "env": ["__CFBundleIdentifier": JumpPlanner.terminalBundle]],
+            ]
+            if let tool { json["tool_name"] = tool }
+            for (key, value) in extra { json[key] = value }
+            return try? HookEvent(source: .claude, json: json)
+        }
+        func ingest(_ hook: HookEvent?, requestID: String? = nil) {
+            guard let hook else { return }
+            apply(SessionReducer.reduce(&sessionState, event: AgentEventAdapter.normalize(hook),
+                                        requestID: requestID, now: now))
+        }
+
+        ingest(event("SessionStart"))
+        switch name {
+        case "closed": break
+        case "opened":
+            ingest(event("UserPromptSubmit", extra: ["prompt": "Implement the interaction harness"] ))
+            notch.apply(.click(now))
+        case "approval":
+            ingest(event("PermissionRequest", tool: "Bash", extra: ["tool_input": ["command": "swift test"]]),
+                   requestID: "harness-approval")
+        case "question":
+            let questions: [[String: Any]] = [["question": "Which display should Reef use?", "header": "Display",
+                                               "options": [["label": "Automatic", "description": "Prefer the built-in notch"],
+                                                           ["label": "External", "description": "Use the selected monitor"]],
+                                               "multiSelect": false]]
+            ingest(event("PermissionRequest", tool: "AskUserQuestion", extra: ["tool_input": ["questions": questions]]),
+                   requestID: "harness-question")
+        case "completion":
+            ingest(event("UserPromptSubmit"))
+            ingest(event("Stop", extra: ["last_assistant_message": "Implemented and verified the requested changes."]))
+            notch.apply(.present(.completion(SessionKey(source: .claude, sessionID: "reef-harness-session")),
+                                 reason: .completion, at: now))
+        case "failure":
+            ingest(event("UserPromptSubmit"))
+            ingest(event("StopFailure"))
+            notch.apply(.present(.failure(SessionKey(source: .claude, sessionID: "reef-harness-session")),
+                                 reason: .failure, at: now))
+        default:
+            notch.apply(.click(now))
+        }
+        stateDidChange()
+    }
+
+    func harnessSnapshotData(scenario: String) -> Data? {
+        func stateName(_ state: NotchState) -> String {
+            switch state {
+            case .closed: return "closed"
+            case .blocking: return "blocking"
+            case .manualExpanded: return "manualExpanded"
+            case let .transient(kind, _): return "transient.\(kind)"
+            }
+        }
+        func surfaceName(_ surface: ReefSurface) -> String {
+            switch surface {
+            case .sessionList: return "sessionList"
+            case .approval: return "approval"
+            case .question: return "question"
+            case .plan: return "plan"
+            case .completion: return "completion"
+            case .failure: return "failure"
+            }
+        }
+        let object: [String: Any] = [
+            "scenario": scenario,
+            "notchState": stateName(notch.state),
+            "openReason": notch.openReason?.rawValue ?? NSNull(),
+            "surface": surfaceName(notch.surface),
+            "sessionCount": visibleSessions.count,
+            "pendingCount": livePendingCount,
+            "labels": visibleSessions.map { session in
+                ["source": session.key.source.rawValue, "project": session.project ?? "",
+                 "waiting": session.status.isWaitingOnUser]
+            },
+        ]
+        return try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
 
 
@@ -428,7 +738,7 @@ final class AppState {
         let expired = pending.expire(now: now)
         for id in expired {
             for session in sessions where session.pending.contains(where: { $0.requestID == id }) {
-                SessionReducer.markReleased(&sessionState, key: session.key, requestID: id)
+                apply(SessionReducer.clearRequest(&sessionState, key: session.key, requestID: id))
             }
             Log.info("session", "request expired", ["request": id])
         }

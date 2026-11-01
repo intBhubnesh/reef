@@ -15,7 +15,7 @@ let package = Package(
         .executableTarget(
             name: "ReefApp",
             dependencies: ["ReefCore"],
-            linkerSettings: [.linkedFramework("AppKit")]
+            linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("Security")]
         ),
         .testTarget(name: "ReefCoreTests", dependencies: ["ReefCore"]),
     ],

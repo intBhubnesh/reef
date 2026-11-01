@@ -13,6 +13,7 @@ public struct TerminalIdentity: Codable, Equatable {
     public var pid: Int?
     public var ppid: Int?
     public var ghosttyMarker: String?
+    public var weztermPaneID: Int?
 
     public init(tty: String? = nil, bundleID: String? = nil, termProgram: String? = nil, kittyWindowID: Int? = nil,
                 kittyPID: Int? = nil, kittyListenOn: String? = nil, tmuxPane: String? = nil, vscodePID: Int? = nil,
@@ -20,6 +21,7 @@ public struct TerminalIdentity: Codable, Equatable {
         self.tty = tty; self.bundleID = bundleID; self.termProgram = termProgram; self.kittyWindowID = kittyWindowID
         self.kittyPID = kittyPID; self.kittyListenOn = kittyListenOn; self.tmuxPane = tmuxPane; self.vscodePID = vscodePID
         self.pid = pid; self.ppid = ppid; self.ghosttyMarker = ghosttyMarker
+        self.weztermPaneID = nil
     }
 
     /// No terminal and no host app: `claude -p`, SDK runs, probes.
@@ -43,5 +45,12 @@ public struct TerminalIdentity: Codable, Equatable {
             ppid: reef["ppid"] as? Int,
             ghosttyMarker: reef["title_marker"] as? String
         )
+        .withWezTermPane(int("WEZTERM_PANE"))
+    }
+
+    private func withWezTermPane(_ id: Int?) -> TerminalIdentity {
+        var copy = self
+        copy.weztermPaneID = id
+        return copy
     }
 }

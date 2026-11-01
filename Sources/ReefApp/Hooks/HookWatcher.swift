@@ -1,7 +1,8 @@
 import Foundation
 import ReefCore
 
-/// Self-healing: every 2.5 s, re-add Reef's hook entries for agents the user installed if they went missing.
+/// Intent-aware health check. Reef repairs only integrations the user explicitly installed and
+/// never overwrites malformed configuration that needs human inspection.
 @MainActor
 final class HookWatcher {
     private var timer: Timer?
@@ -14,7 +15,7 @@ final class HookWatcher {
     }
 
     func start() {
-        timer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.check() }
         }
     }
@@ -22,7 +23,9 @@ final class HookWatcher {
     func stop() { timer?.invalidate() }
 
     func check() {
-        for source in installedSources() where !HookInstaller.status(source).isComplete {
+        for source in installedSources() {
+            let health = HookInstaller.health(source)
+            guard !health.isHealthy, health.isAutoRepairable else { continue }
             if HookInstaller.install(source) == nil {
                 Log.warn("hook", "restored missing hook entries", ["source": source.rawValue])
                 onHealed(source)

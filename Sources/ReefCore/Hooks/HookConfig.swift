@@ -10,8 +10,7 @@ public enum HookConfig {
         "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "SessionEnd", "PreCompact", "PostCompact",
     ]
     public static let codexEvents = [
-        "SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
-        "PreCompact", "PostCompact", "SubagentStart", "SubagentStop", "Stop", "Interrupt",
+        "SessionStart", "UserPromptSubmit", "PermissionRequest", "Stop",
     ]
 
     public static func events(for source: AgentSource) -> [String] {
@@ -23,9 +22,9 @@ public enum HookConfig {
     }
 
     public static func timeout(event: String, source: AgentSource) -> Int {
-        if event == "PermissionRequest" { return 3600 }
+        if event == "PermissionRequest" { return source == .claude ? 86_400 : 3_600 }
         if source == .codex, event == "SessionEnd" || event == "Interrupt" { return 1 }
-        return 5
+        return 45
     }
 
     public static func matcher(event: String, source: AgentSource) -> String? {
@@ -44,15 +43,26 @@ public enum HookConfig {
     public struct HookStatus: Equatable {
         public let installedEvents: [String]
         public let missingEvents: [String]
-        public var isComplete: Bool { missingEvents.isEmpty }
+        public let staleEvents: [String]
+        public let obsoleteEvents: [String]
+        public var isComplete: Bool { missingEvents.isEmpty && staleEvents.isEmpty && obsoleteEvents.isEmpty }
     }
 
     public static func install(into root: [String: Any], source: AgentSource) -> [String: Any] {
         var root = root
         var hooks = root["hooks"] as? [String: Any] ?? [:]
+        let wanted = Set(events(for: source))
+        // Migrate older Reef installs that registered a noisier event set. Only Reef-owned
+        // entries are removed; entries from the user and other applications remain untouched.
+        for (event, value) in hooks where !wanted.contains(event) {
+            guard var entries = value as? [[String: Any]] else { continue }
+            entries.removeAll(where: isOurs)
+            hooks[event] = entries.isEmpty ? nil : entries
+        }
         for event in events(for: source) {
             var entries = hooks[event] as? [[String: Any]] ?? []
-            guard !entries.contains(where: isOurs) else { continue }
+            if entries.contains(where: { isCurrent($0, event: event, source: source) }) { continue }
+            entries.removeAll(where: isOurs)
             let hook: [String: Any] = ["type": "command", "command": command(source: source),
                                        "timeout": timeout(event: event, source: source)]
             var entry: [String: Any] = ["hooks": [hook]]
@@ -84,12 +94,32 @@ public enum HookConfig {
     public static func status(of root: [String: Any], source: AgentSource) -> HookStatus {
         let hooks = root["hooks"] as? [String: Any] ?? [:]
         let wanted = events(for: source)
-        let installed = wanted.filter { (hooks[$0] as? [[String: Any]] ?? []).contains(where: isOurs) }
-        return HookStatus(installedEvents: installed, missingEvents: wanted.filter { !installed.contains($0) })
+        let owned = wanted.filter { (hooks[$0] as? [[String: Any]] ?? []).contains(where: isOurs) }
+        let installed = wanted.filter { event in
+            (hooks[event] as? [[String: Any]] ?? []).contains { isCurrent($0, event: event, source: source) }
+        }
+        let obsolete = hooks.compactMap { event, value -> String? in
+            guard !wanted.contains(event),
+                  (value as? [[String: Any]] ?? []).contains(where: isOurs) else { return nil }
+            return event
+        }.sorted()
+        return HookStatus(installedEvents: owned,
+                          missingEvents: wanted.filter { !owned.contains($0) },
+                          staleEvents: owned.filter { !installed.contains($0) },
+                          obsoleteEvents: obsolete)
     }
 
     /// An entry is ours when any of its hooks runs the Reef bridge.
     static func isOurs(_ entry: [String: Any]) -> Bool {
         (entry["hooks"] as? [[String: Any]] ?? []).contains { ($0["command"] as? String ?? "").contains(bridgeMarker) }
+    }
+
+    static func isCurrent(_ entry: [String: Any], event: String, source: AgentSource) -> Bool {
+        guard let hooks = entry["hooks"] as? [[String: Any]], hooks.count == 1,
+              let hook = hooks.first,
+              hook["command"] as? String == command(source: source),
+              hook["timeout"] as? Int == timeout(event: event, source: source)
+        else { return false }
+        return (entry["matcher"] as? String) == matcher(event: event, source: source)
     }
 }

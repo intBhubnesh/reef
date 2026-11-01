@@ -17,6 +17,13 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 echo -n "APPL????" > "$APP/Contents/PkgInfo"
 [ -f "$ROOT/Resources/AppIcon.icns" ] || "$ROOT/scripts/make-icon.sh"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
+if [ -d "$ROOT/Resources/BrandIcons" ]; then
+  cp -R "$ROOT/Resources/BrandIcons" "$APP/Contents/Resources/"
+fi
+if [ -d "$ROOT/Resources/Sounds" ]; then
+  cp -R "$ROOT/Resources/Sounds" "$APP/Contents/Resources/"
+fi
 if [ -f "$ROOT/Resources/Fonts/DepartureMono-Regular.otf" ]; then
   mkdir -p "$APP/Contents/Resources/Fonts"
   cp "$ROOT/Resources/Fonts/DepartureMono-Regular.otf" "$APP/Contents/Resources/Fonts/"

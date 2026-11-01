@@ -78,9 +78,10 @@ struct IntegrationsTab: View {
     @ViewBuilder
     private func agentRow(_ source: AgentSource, name: String, file: String) -> some View {
         let status = HookInstaller.status(source)
-        SettingsRow(title: name, subtitle: subtitle(for: source, status: status, file: file)) {
+        let health = HookInstaller.health(source)
+        SettingsRow(title: name, subtitle: subtitle(for: source, status: status, health: health, file: file)) {
             HStack(spacing: 8) {
-                statusChip(status)
+                statusChip(status, health: health)
                 if status.installedEvents.isEmpty {
                     Button("Install") { error = app.installHooks(source); refresh += 1 }
                 } else {
@@ -92,8 +93,12 @@ struct IntegrationsTab: View {
         .id("\(source.rawValue)-\(refresh)")
     }
 
-    private func subtitle(for source: AgentSource, status: HookConfig.HookStatus, file: String) -> String {
+    private func subtitle(for source: AgentSource, status: HookConfig.HookStatus,
+                          health: HookHealth, file: String) -> String {
         var parts = [file]
+        if health.issues.contains(.configMalformed) { parts.append("Configuration is malformed; Reef will not overwrite it.") }
+        if health.issues.contains(.bridgeMissing) { parts.append("Managed bridge binary is missing.") }
+        if !status.staleEvents.isEmpty || !status.obsoleteEvents.isEmpty { parts.append("Managed hooks need updating.") }
         if source == .codex, !status.installedEvents.isEmpty {
             switch HookInstaller.codexTrusted() {
             case .some(true): parts.append("Hooks trusted by Codex.")
@@ -105,13 +110,16 @@ struct IntegrationsTab: View {
     }
 
     @ViewBuilder
-    private func statusChip(_ status: HookConfig.HookStatus) -> some View {
-        if status.installedEvents.isEmpty {
+    private func statusChip(_ status: HookConfig.HookStatus, health: HookHealth) -> some View {
+        if health.issues.contains(.configMalformed) {
+            Label("Needs attention", systemImage: "xmark.octagon.fill").font(.caption).foregroundStyle(.red)
+        } else if status.installedEvents.isEmpty {
             Text("Not installed").font(.caption).foregroundStyle(.secondary)
         } else if status.isComplete {
             Label("Installed", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
         } else {
-            Label("Missing \(status.missingEvents.count) events", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
+            let count = status.missingEvents.count + status.staleEvents.count + status.obsoleteEvents.count
+            Label("Repair \(count) entries", systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
         }
     }
 }

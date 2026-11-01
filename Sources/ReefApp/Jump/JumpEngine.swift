@@ -39,6 +39,13 @@ final class JumpEngine {
             return await Shell.run("/usr/bin/open", ["-b", JumpPlanner.vscodeBundle, cwd]) == 0
         case let .tmuxSelectPane(pane):
             return await TmuxFocus.select(pane: pane)
+        case let .terminalFocusTTY(tty):
+            return await TerminalFocus.terminal(tty: tty)
+        case let .iTermFocusTTY(tty):
+            return await TerminalFocus.iTerm(tty: tty)
+        case let .weztermFocusPane(id):
+            guard let executable = Shell.which("wezterm", extra: ["/Applications/WezTerm.app/Contents/MacOS/wezterm"]) else { return false }
+            return await Shell.run(executable, ["cli", "activate-pane", "--pane-id", String(id)]) == 0
         case let .activateApp(bundleID):
             return Self.activate(bundleID: bundleID)
         }
@@ -55,8 +62,58 @@ final class JumpEngine {
         case let .ghosttyFocusByTitleMarker(m): return "ghostty:\(m)"
         case let .vscodeOpen(cwd): return "vscode:\(cwd)"
         case let .tmuxSelectPane(p): return "tmux:\(p)"
+        case let .terminalFocusTTY(tty): return "terminal:\(tty)"
+        case let .iTermFocusTTY(tty): return "iterm:\(tty)"
+        case let .weztermFocusPane(id): return "wezterm:\(id)"
         case let .activateApp(b): return "activate:\(b)"
         }
+    }
+}
+
+enum TerminalFocus {
+    static func terminal(tty: String) async -> Bool {
+        let script = """
+        tell application "Terminal"
+          repeat with w in windows
+            repeat with t in tabs of w
+              if tty of t is "\(escaped(tty))" then
+                set selected tab of w to t
+                set index of w to 1
+                activate
+                return
+              end if
+            end repeat
+          end repeat
+          error "TTY not found"
+        end tell
+        """
+        return await Shell.run("/usr/bin/osascript", ["-e", script]) == 0
+    }
+
+    static func iTerm(tty: String) async -> Bool {
+        let script = """
+        tell application "iTerm2"
+          repeat with w in windows
+            repeat with t in tabs of w
+              repeat with s in sessions of t
+                if tty of s is "\(escaped(tty))" then
+                  select s
+                  select t
+                  select w
+                  activate
+                  return
+                end if
+              end repeat
+            end repeat
+          end repeat
+          error "TTY not found"
+        end tell
+        """
+        return await Shell.run("/usr/bin/osascript", ["-e", script]) == 0
+    }
+
+    private static func escaped(_ value: String) -> String {
+        value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
     }
 }
 

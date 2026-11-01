@@ -32,7 +32,10 @@ extension NotchTransition {
     func animation(reduceMotion: Bool) -> Animation {
         if reduceMotion { return .easeOut(duration: Motion.reducedFade) }
         if self == .snap { return .linear(duration: 0) }
-        return .spring(response: response, dampingFraction: damping).delay(delay)
+        if self == .collapse { return .smooth(duration: response) }
+        // `smooth` uses the native continuous velocity curve. A small amount of bounce keeps
+        // the island alive without the abrupt initial acceleration of the old response spring.
+        return .smooth(duration: response, extraBounce: 0.06).delay(delay)
     }
 
     /// The content fade that follows the frame change.

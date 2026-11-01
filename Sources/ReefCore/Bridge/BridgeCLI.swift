@@ -5,6 +5,10 @@ public enum BridgeCLI {
     public static let waitTimeout: TimeInterval = 3600
     public static let fireTimeout: TimeInterval = 2
 
+    public static func waitTimeout(for source: AgentSource) -> TimeInterval {
+        source == .claude ? 86_400 : 3_600
+    }
+
     public struct Paths {
         public let home: String
         public var reefDir: String { home + "/.reef" }
@@ -62,7 +66,8 @@ public enum BridgeCLI {
         guard let line = try? request.encodedLine() else { stdout(empty); return }
         let client = UnixSocketClient(path: paths.socketPath)
         defer { client.close() }
-        guard let replyLine = try? client.send(line, awaitReply: mode == .wait, timeout: mode == .wait ? waitTimeout : fireTimeout),
+        guard let replyLine = try? client.send(line, awaitReply: mode == .wait,
+                                               timeout: mode == .wait ? waitTimeout(for: source) : fireTimeout),
               let response = try? BridgeResponse.decode(line: replyLine),
               let data = try? JSONSerialization.data(withJSONObject: response.reply, options: [.sortedKeys])
         else { stdout(empty); return }

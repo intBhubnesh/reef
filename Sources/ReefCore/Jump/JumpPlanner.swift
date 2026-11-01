@@ -5,6 +5,9 @@ public enum JumpStep: Equatable {
     case ghosttyFocusByTitleMarker(String)
     case vscodeOpen(cwd: String)
     case tmuxSelectPane(String)
+    case terminalFocusTTY(String)
+    case iTermFocusTTY(String)
+    case weztermFocusPane(Int)
     case activateApp(bundleID: String)
 }
 
@@ -13,6 +16,9 @@ public enum JumpPlanner {
     public static let kittyBundle = "net.kovidgoyal.kitty"
     public static let ghosttyBundle = "com.mitchellh.ghostty"
     public static let vscodeBundle = "com.microsoft.VSCode"
+    public static let terminalBundle = "com.apple.Terminal"
+    public static let iTermBundle = "com.googlecode.iterm2"
+    public static let weztermBundle = "com.github.wez.wezterm"
 
     public static func plan(_ t: TerminalIdentity, cwd: String?) -> [JumpStep] {
         guard !t.isHeadless else { return [] }
@@ -28,6 +34,15 @@ public enum JumpPlanner {
         }
         if let pane = t.tmuxPane {
             steps.append(.tmuxSelectPane(pane))
+        }
+        if t.bundleID == terminalBundle, let tty = t.tty {
+            steps.append(.terminalFocusTTY(tty))
+        }
+        if t.bundleID == iTermBundle, let tty = t.tty {
+            steps.append(.iTermFocusTTY(tty))
+        }
+        if t.bundleID == weztermBundle, let pane = t.weztermPaneID {
+            steps.append(.weztermFocusPane(pane))
         }
         if let bundleID = t.bundleID {
             steps.append(.activateApp(bundleID: bundleID))

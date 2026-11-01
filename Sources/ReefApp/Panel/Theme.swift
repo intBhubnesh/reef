@@ -54,11 +54,17 @@ enum Theme {
     /// One glance tells you what an agent needs: working, waiting on you, done, failed.
     static func statusColor(_ status: SessionStatus) -> Color {
         switch status {
-        case .idle, .working, .runningTool, .compacting: return accent
-        case .waitingForApproval, .waitingForQuestion, .waitingForPlan: return waiting
+        case .idle: return done
+        case .working, .runningTool, .compacting: return waiting
+        case .waitingForApproval, .waitingForQuestion, .waitingForPlan: return accent
         case .done: return done
         case .failed: return failed
         }
+    }
+
+    /// Waiting avatars are blue, so their attention dot uses the working orange for contrast.
+    static func avatarBadgeColor(_ status: SessionStatus) -> Color {
+        status.isWaitingOnUser ? waiting : accent
     }
 
     static func chipColors(_ source: AgentSource) -> (background: Color, text: Color) {

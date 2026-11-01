@@ -2,5 +2,8 @@
 dist/
 *.app
 .superpowers/
+.artifacts/
 .DS_Store
 Resources/Fonts/
+# Local source-audio library. The five selected, converted release sounds live in Resources/Sounds.
+Audio/

@@ -13,6 +13,10 @@ struct SessionSprite: View {
                         seed: session.animationSeed,
                         phaseStart: session.animationPhaseStart,
                         cell: cell,
-                        reduceMotion: app.reduceMotion)
+                        reduceMotion: app.reduceMotion,
+                        emotion: AvatarStatusSlot.emotion(
+                            for: session.status,
+                            mapping: app.settings.avatarEmotionByStatus
+                        ))
     }
 }

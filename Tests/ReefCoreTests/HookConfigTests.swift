@@ -18,8 +18,8 @@ final class HookConfigTests: XCTestCase {
             XCTAssertEqual(hook(root, event)["command"] as? String, expectedClaudeCommand, event)
             XCTAssertEqual(hook(root, event)["type"] as? String, "command")
         }
-        XCTAssertEqual(hook(root, "PermissionRequest")["timeout"] as? Int, 3600)
-        XCTAssertEqual(hook(root, "Stop")["timeout"] as? Int, 5)
+        XCTAssertEqual(hook(root, "PermissionRequest")["timeout"] as? Int, 86_400)
+        XCTAssertEqual(hook(root, "Stop")["timeout"] as? Int, 45)
         XCTAssertEqual(entries(root, "PreToolUse")[0]["matcher"] as? String, "*")
         XCTAssertNil(entries(root, "Stop")[0]["matcher"])
     }
@@ -55,15 +55,13 @@ final class HookConfigTests: XCTestCase {
         XCTAssertNil(HookConfig.install(into: [:], source: .codex)["env"])
     }
 
-    func testCodexMatchersAndOneSecondTimeouts() {
+    func testCodexManagedInstallIsDeliberatelyLowNoise() {
         let root = HookConfig.install(into: [:], source: .codex)
-        XCTAssertEqual(hook(root, "SessionEnd")["timeout"] as? Int, 1)
-        XCTAssertEqual(hook(root, "Interrupt")["timeout"] as? Int, 1)
         XCTAssertEqual(hook(root, "PermissionRequest")["timeout"] as? Int, 3600)
         XCTAssertEqual(entries(root, "SessionStart")[0]["matcher"] as? String, "startup|resume|clear")
-        XCTAssertEqual(entries(root, "PreCompact")[0]["matcher"] as? String, "manual|auto")
-        XCTAssertEqual(entries(root, "PostCompact")[0]["matcher"] as? String, "manual|auto")
         XCTAssertTrue((hook(root, "Stop")["command"] as? String ?? "").hasSuffix("--source codex; exit 0'"))
+        XCTAssertEqual(Set(HookConfig.codexEvents), Set(["SessionStart", "UserPromptSubmit", "PermissionRequest", "Stop"]))
+        XCTAssertNil((root["hooks"] as? [String: Any])?["PreToolUse"])
         XCTAssertNil((root["hooks"] as? [String: Any])?["Notification"])
     }
 
@@ -77,6 +75,34 @@ final class HookConfigTests: XCTestCase {
         XCTAssertFalse(status.isComplete)
         XCTAssertTrue(HookConfig.status(of: HookConfig.install(into: root, source: .claude), source: .claude).isComplete)
         XCTAssertEqual(HookConfig.status(of: [:], source: .claude).installedEvents, [])
+    }
+
+    func testStatusReportsAndRepairsAStaleOwnedCommand() {
+        var root = HookConfig.install(into: [:], source: .codex)
+        var hooks = root["hooks"] as! [String: Any]
+        var entries = hooks["Stop"] as! [[String: Any]]
+        var commands = entries[0]["hooks"] as! [[String: Any]]
+        commands[0]["timeout"] = 1
+        entries[0]["hooks"] = commands
+        hooks["Stop"] = entries
+        root["hooks"] = hooks
+        XCTAssertEqual(HookConfig.status(of: root, source: .codex).staleEvents, ["Stop"])
+        XCTAssertTrue(HookConfig.status(of: HookConfig.install(into: root, source: .codex), source: .codex).isComplete)
+    }
+
+    func testLowNoiseMigrationRemovesOnlyObsoleteReefCodexEntries() {
+        var root = HookConfig.install(into: [:], source: .codex)
+        var hooks = root["hooks"] as! [String: Any]
+        let ours: [String: Any] = ["hooks": [["type": "command",
+                                               "command": HookConfig.command(source: .codex), "timeout": 45]]]
+        let other: [String: Any] = ["hooks": [["type": "command", "command": "other", "timeout": 45]]]
+        hooks["PreToolUse"] = [other, ours]
+        root["hooks"] = hooks
+        XCTAssertEqual(HookConfig.status(of: root, source: .codex).obsoleteEvents, ["PreToolUse"])
+        let migrated = HookConfig.install(into: root, source: .codex)
+        XCTAssertTrue(HookConfig.status(of: migrated, source: .codex).isComplete)
+        XCTAssertEqual(entries(migrated, "PreToolUse").count, 1)
+        XCTAssertEqual(hook(migrated, "PreToolUse")["command"] as? String, "other")
     }
 
     func testCodexTrustParsesState() {

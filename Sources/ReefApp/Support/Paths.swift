@@ -11,6 +11,7 @@ enum Paths {
     static let supportDir = home.appendingPathComponent("Library/Application Support/Reef")
     static let settingsFile = supportDir.appendingPathComponent("settings.json")
     static let sessionTerminalsFile = supportDir.appendingPathComponent("session-terminals.json")
+    static let hookManifestFile = supportDir.appendingPathComponent("hook-manifest.json")
     static let logDir = home.appendingPathComponent("Library/Logs/Reef")
     static let logFile = logDir.appendingPathComponent("reef.log")
     static let claudeSettings = home.appendingPathComponent(".claude/settings.json").path

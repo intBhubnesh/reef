@@ -33,18 +33,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (esc in vim, ⌃A in a shell) must never become approvals.
         hotkeys = GlobalHotkeys(isActive: { [weak self] in
                                     guard let controller = self?.notchController, controller.isExpanded else { return false }
-                                    return controller.panel.frame.contains(NSEvent.mouseLocation)
+                                    return controller.panelScreenRect.contains(NSEvent.mouseLocation)
                                 },
                                 perform: { [weak self] shortcut in self?.state.perform(shortcut) })
         animation = AnimationSettings()
         animation.onChange = { [weak self] value in self?.state.reduceMotion = value }
         state.reduceMotion = animation.reduceMotion
         installMenu()
-        state.start()
+        let scenario = ProcessInfo.processInfo.arguments
+            .first(where: { $0.hasPrefix("--reef-scenario=") })?
+            .split(separator: "=", maxSplits: 1).last.map(String.init)
+        state.start(backgroundServices: scenario == nil)
+        if let scenario {
+            state.loadHarnessScenario(scenario)
+        }
         notchController.show()
+        state.loadBarkCredential()
+        if let scenario,
+           let path = ProcessInfo.processInfo.arguments
+            .first(where: { $0.hasPrefix("--reef-snapshot-path=") })?
+            .split(separator: "=", maxSplits: 1).last.map(String.init),
+           let data = state.harnessSnapshotData(scenario: scenario) {
+            try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { NSApp.terminate(nil) }
+        }
+        // Deterministic smoke-test entry point. It exercises the real Settings controller after
+        // launch without requiring Accessibility permission for synthetic clicks or keystrokes.
+        if ProcessInfo.processInfo.arguments.contains("--open-display-settings") {
+            DispatchQueue.main.async { [weak self] in self?.settingsController.show(tab: .display) }
+        } else if ProcessInfo.processInfo.arguments.contains("--open-settings") {
+            DispatchQueue.main.async { [weak self] in self?.settingsController.show() }
+        }
         mouseMonitor.start()
-        hookWatcher.start()
-        hotkeys.start()
+        if scenario == nil {
+            hookWatcher.start()
+            hotkeys.start()
+        }
         // Accessibility can be granted while running; pick the tap up when it is.
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.hotkeys.start() }

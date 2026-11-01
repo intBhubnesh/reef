@@ -16,23 +16,23 @@ final class NotchMachineTests: XCTestCase {
     func testHoverExitCollapsesAfterLeaveDelay() {
         var m = NotchMachine(timing: NotchTiming())
         _ = m.apply(.hoverEnter(at(0))); _ = m.apply(.tick(at(0.2)))
-        XCTAssertEqual(m.apply(.hoverExit(at(1))), .transient(kind: .hover, until: at(2)))
-        XCTAssertEqual(m.apply(.tick(at(1.5))), .transient(kind: .hover, until: at(2)))
-        XCTAssertEqual(m.apply(.tick(at(2.1))), .closed)
+        XCTAssertEqual(m.apply(.hoverExit(at(1))), .transient(kind: .hover, until: at(1)))
+        XCTAssertEqual(m.apply(.tick(at(1))), .closed)
     }
 
     func testHoverExitThenReenterCancelsCollapse() {
-        var m = NotchMachine(timing: NotchTiming())
+        var timing = NotchTiming(); timing.leaveCollapse = 1
+        var m = NotchMachine(timing: timing)
         _ = m.apply(.hoverEnter(at(0))); _ = m.apply(.tick(at(0.2)))
         _ = m.apply(.hoverExit(at(1)))
         XCTAssertEqual(m.apply(.hoverEnter(at(1.5))), .transient(kind: .hover, until: .distantFuture))
         XCTAssertEqual(m.apply(.tick(at(3))), .transient(kind: .hover, until: .distantFuture))
     }
 
-    func testBlockingIgnoresMouseLeaveAndOutsideClick() {
+    func testQuestionIgnoresMouseLeaveAndOutsideClick() {
         var m = NotchMachine(timing: NotchTiming())
         m.pendingCount = 1
-        XCTAssertEqual(m.apply(.requestArrived(at(0))), .blocking)
+        XCTAssertEqual(m.apply(.present(.question(requestID: "q"), reason: .blockingRequest, at: at(0))), .blocking)
         XCTAssertEqual(m.apply(.hoverExit(at(1))), .blocking)
         XCTAssertEqual(m.apply(.outsideClick(at(2))), .blocking)
         XCTAssertEqual(m.apply(.tick(at(100))), .blocking)
@@ -45,18 +45,17 @@ final class NotchMachineTests: XCTestCase {
         XCTAssertEqual(m.apply(.tick(at(5.1))), .closed)
     }
 
-    func testEscapeCollapsesBlocking() {
+    func testBlockingSurfaceIgnoresEscapeUntilResolved() {
         var m = NotchMachine(timing: NotchTiming())
         m.pendingCount = 1
-        _ = m.apply(.requestArrived(at(0)))
-        XCTAssertEqual(m.apply(.escape(at(1))), .closed)
+        _ = m.apply(.present(.approval(requestID: "r1"), reason: .blockingRequest, at: at(0)))
+        XCTAssertEqual(m.apply(.escape(at(1))), .blocking)
     }
 
     func testClickToggles() {
         var m = NotchMachine(timing: NotchTiming())
         XCTAssertEqual(m.apply(.click(at(0))), .manualExpanded)
-        XCTAssertEqual(m.apply(.hoverExit(at(1))), .manualExpanded)
-        XCTAssertEqual(m.apply(.click(at(2))), .closed)
+        XCTAssertEqual(m.apply(.click(at(1))), .closed)
     }
 
     func testRequestArrivedDoesNotOverrideManualExpanded() {
@@ -79,13 +78,14 @@ final class NotchMachineTests: XCTestCase {
     // MARK: - Stage 2: transition kinds and peek suspension
 
     func testHoverSuspendsACompletionPeekAndRestartsTheHold() {
-        var m = NotchMachine(timing: NotchTiming())
+        var timing = NotchTiming(); timing.leaveCollapse = 1
+        var m = NotchMachine(timing: timing)
         _ = m.apply(.taskComplete(at(0)))
         _ = m.apply(.hoverEnter(at(1)))
         XCTAssertEqual(m.apply(.tick(at(30))), .transient(kind: .completion, until: .distantFuture))
         _ = m.apply(.hoverExit(at(31)))
-        XCTAssertEqual(m.apply(.tick(at(35.9))), .transient(kind: .completion, until: at(36)))
-        XCTAssertEqual(m.apply(.tick(at(36.1))), .closed)
+        XCTAssertEqual(m.apply(.tick(at(31.9))), .transient(kind: .completion, until: at(32)))
+        XCTAssertEqual(m.apply(.tick(at(32.1))), .closed)
     }
 
     func testPeekNeverReplacesABlockingPanel() {
@@ -133,5 +133,45 @@ final class NotchMachineTests: XCTestCase {
         _ = m.apply(.hoverEnter(at(0))); _ = m.apply(.tick(at(0.2)))
         XCTAssertEqual(m.apply(.hoverExit(at(1))), .transient(kind: .hover, until: .distantFuture))
         XCTAssertEqual(m.apply(.outsideClick(at(2))), .closed)
+    }
+
+    func testSurfaceRoutingRecordsReasonAndStableID() {
+        var m = NotchMachine(timing: NotchTiming())
+        let key = SessionKey(source: .codex, sessionID: "s")
+        XCTAssertEqual(m.apply(.present(.completion(key), reason: .completion, at: at(0))),
+                       .transient(kind: .completion, until: at(5)))
+        XCTAssertEqual(m.openReason, .completion)
+        XCTAssertEqual(m.surface, .completion(key))
+        _ = m.apply(.surfaceEntered(at(1)))
+        XCTAssertTrue(m.notificationWasEntered)
+        _ = m.apply(.tick(at(6)))
+        XCTAssertNil(m.openReason)
+        XCTAssertEqual(m.surface, .sessionList(actionableRequestID: nil))
+    }
+
+    func testQuestionAndPlanSurfacesPinAgainstOutsideClick() {
+        for surface in [ReefSurface.question(requestID: "q"), .plan(requestID: "p")] {
+            var m = NotchMachine(timing: NotchTiming())
+            _ = m.apply(.present(surface, reason: .blockingRequest, at: at(0)))
+            XCTAssertEqual(m.apply(.outsideClick(at(1))), .blocking)
+        }
+    }
+
+    func testManualApprovalPlanAndCompletionCollapseOnPointerExit() {
+        var manual = NotchMachine(timing: NotchTiming())
+        _ = manual.apply(.click(at(0)))
+        XCTAssertEqual(manual.apply(.hoverExit(at(1))), .closed)
+
+        for surface in [ReefSurface.approval(requestID: "a"), .plan(requestID: "p")] {
+            var action = NotchMachine(timing: NotchTiming())
+            _ = action.apply(.present(surface, reason: .blockingRequest, at: at(0)))
+            XCTAssertEqual(action.apply(.hoverExit(at(1))), .closed)
+        }
+
+        var completion = NotchMachine(timing: NotchTiming())
+        _ = completion.apply(.taskComplete(at(0)))
+        XCTAssertEqual(completion.apply(.hoverExit(at(1))),
+                       .transient(kind: .completion, until: at(1)))
+        XCTAssertEqual(completion.apply(.tick(at(1))), .closed)
     }
 }

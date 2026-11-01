@@ -131,6 +131,40 @@ final class SocketServerTests: XCTestCase {
         XCTAssertEqual((attrs[.posixPermissions] as? Int) ?? 0 & 0o777, 0o600)
     }
 
+    func testSecondServerCannotStealALiveSocket() throws {
+        try server.start()
+        let replacement = UnixSocketServer(path: path, queue: DispatchQueue(label: "reef.test.replacement"))
+        XCTAssertThrowsError(try replacement.start())
+
+        let received = expectation(description: "original still receives")
+        server.onRequest = { _, _ in received.fulfill() }
+        XCTAssertNil(try UnixSocketClient(path: path).send(fireLine(), awaitReply: false, timeout: 1))
+        wait(for: [received], timeout: 2)
+        replacement.stop()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path),
+                      "a server that never owned the path must not unlink it")
+    }
+
+    func testStaleSocketPathIsReclaimed() throws {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8)
+        withUnsafeMutableBytes(of: &addr.sun_path) { raw in
+            raw.copyBytes(from: bytes); raw[bytes.count] = 0
+        }
+        let len = socklen_t(MemoryLayout<sockaddr_un>.size)
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, len) }
+        }
+        XCTAssertEqual(bound, 0)
+        Darwin.close(fd) // leave the filesystem entry behind, as a crash would
+
+        try server.start()
+        XCTAssertNoThrow(try UnixSocketClient(path: path).connect())
+    }
+
     func testTwoWaitRequestsAreIndependent() throws {
         let pending = PendingRequests()
         let added = expectation(description: "added"); added.expectedFulfillmentCount = 2

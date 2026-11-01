@@ -9,18 +9,22 @@ public enum Motion {
     /// M2: expansion starts 150 ms after the pointer enters the pill.
     public static let hoverDwell: TimeInterval = 0.15
     /// M2: ~300 ms to target with ~1.3 % overshoot, settled by ~580 ms.
-    public static let expandResponse: TimeInterval = 0.35
-    public static let expandDamping: Double = 0.78
+    public static let expandResponse: TimeInterval = 0.42
+    public static let expandDamping: Double = 0.80
     /// M1: the pill itself scales slightly the moment the pointer arrives.
     public static let pillHoverScale: CGFloat = 1.02
     public static let pillHoverDuration: TimeInterval = 0.13
 
     // Collapse
     /// M7: 93 % done by 300 ms, tail to ~600 ms, no overshoot.
-    public static let collapseResponse: TimeInterval = 0.45
+    public static let collapseResponse: TimeInterval = 0.30
     public static let collapseDamping: Double = 1.0
     /// Extra wait before the window shrinks, so the collapse tail is never clipped.
-    public static let windowShrinkExtra: TimeInterval = 0.10
+    public static let windowShrinkExtra: TimeInterval = 0.06
+
+    // In-panel disclosure
+    /// A content disclosure should feel connected to the control without snapping the panel.
+    public static let disclosureResponse: TimeInterval = 0.28
 
     // Automatic reveals
     /// M6: the pill swaps instantly, the panel follows within ~50 ms.
@@ -133,11 +137,15 @@ public enum Metrics {
     public static let statusDotSize: CGFloat = 7
 
     // Pill (L8)
-    public static let pillSpriteSize: CGFloat = 16
-    public static let pillSpriteGap: CGFloat = 5
+    /// The orb reserves space for its orbit, so a 24 pt box yields a ~20 pt visible body inside
+    /// the 33 pt notch. The old 16 pt box reduced the body to 13 pt and made it look missing.
+    public static let pillSpriteSize: CGFloat = 24
+    public static let pillSpriteGap: CGFloat = 6
     public static let pillSideInset: CGFloat = 10.5
 
-    /// The character glyph is drawn on an 8 × 6 cell grid.
+    /// Existing call sites size the avatar as eight cells across. The renderer is vector-based;
+    /// this remains the shared conversion from the historical cell API to a point diameter.
     public static let spriteColumns: Int = 8
+    /// Retained for compatibility with the pure legacy sprite-frame tests.
     public static let spriteRows: Int = 6
 }

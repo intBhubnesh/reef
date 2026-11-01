@@ -44,12 +44,9 @@ struct SessionCardView: View {
                 Spacer(minLength: 8)
                 HStack(spacing: Metrics.chipGap) {
                     let colors = Theme.chipColors(session.key.source)
-                    Chip(text: AgentLabel.name(session.key.source), tint: colors.text, background: colors.background)
-                    if let terminal = AgentLabel.terminalName(session.terminal) { Chip(text: terminal) }
+                    AgentIconChip(source: session.key.source, tint: colors.text, background: colors.background)
+                    TerminalBadge(terminal: session.terminal)
                     Chip(text: Format.elapsed(since: session.startedAt))
-                    // Read-only: this session came from a transcript, so there is no hook to
-                    // answer and nothing to jump to.
-                    if watched { Chip(text: "Watched") }
                     if session.status == .done {
                         Circle().fill(Theme.done).frame(width: Metrics.statusDotSize, height: Metrics.statusDotSize)
                     }
@@ -64,6 +61,9 @@ struct SessionCardView: View {
         }
         .buttonStyle(.plain)
         .help(watched ? "Focus VS Code. Read from the Codex transcript, so approvals happen there." : "Jump to terminal")
+        .contextMenu {
+            Button("Dismiss agent", systemImage: "xmark.circle") { app.dismiss(session: session) }
+        }
     }
 
     private var titleLine: String {

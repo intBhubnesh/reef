@@ -58,6 +58,10 @@ public final class UnixSocketServer {
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
     private var connections: [UUID: Connection] = [:]
+    /// Identity of the pathname created by this server. A previous Reef process can finish
+    /// shutting down after its replacement has already bound the same path; only the process
+    /// that still owns the pathname may unlink it.
+    private var socketPathIdentity: (device: dev_t, inode: ino_t)?
     /// Called on the server's queue; hop to the main thread before touching UI state. `Connection.onClosed` runs on main.
     public var onRequest: ((BridgeRequest, Connection) -> Void)?
 
@@ -67,7 +71,8 @@ public final class UnixSocketServer {
     }
 
     public func start() throws {
-        unlink(path)
+        guard listenFD < 0 else { return }
+        try removeStaleSocketIfNeeded()
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw UnixSocketClient.Error.unavailable }
         var addr = sockaddr_un()
@@ -79,6 +84,7 @@ public final class UnixSocketServer {
         let bound = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, len) } }
         guard bound == 0, listen(fd, 16) == 0 else { Darwin.close(fd); throw UnixSocketClient.Error.unavailable }
         chmod(path, 0o600)
+        socketPathIdentity = identity(at: path)
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
         listenFD = fd
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
@@ -95,7 +101,34 @@ public final class UnixSocketServer {
             for connection in connections.values { connection.closeLocked() }
             connections.removeAll()
         }
-        unlink(path)
+        // Never let an old process remove a replacement process's live socket during a restart.
+        if let owned = socketPathIdentity, let current = identity(at: path),
+           owned.device == current.device, owned.inode == current.inode {
+            unlink(path)
+        }
+        socketPathIdentity = nil
+    }
+
+    /// Leaves a live listener alone. A pathname left behind by a crashed process is safe to
+    /// remove, but unlinking a live socket makes that server unreachable while it still appears
+    /// healthy—exactly the restart race this check prevents.
+    private func removeStaleSocketIfNeeded() throws {
+        guard lstatExists(path) else { return }
+        let client = UnixSocketClient(path: path)
+        defer { client.close() }
+        if (try? client.connect()) != nil { throw UnixSocketClient.Error.unavailable }
+        guard unlink(path) == 0 || errno == ENOENT else { throw UnixSocketClient.Error.unavailable }
+    }
+
+    private func lstatExists(_ path: String) -> Bool {
+        var value = stat()
+        return lstat(path, &value) == 0
+    }
+
+    private func identity(at path: String) -> (device: dev_t, inode: ino_t)? {
+        var value = stat()
+        guard lstat(path, &value) == 0 else { return nil }
+        return (value.st_dev, value.st_ino)
     }
 
     private func acceptPending() {

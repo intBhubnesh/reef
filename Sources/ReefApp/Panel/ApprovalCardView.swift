@@ -100,7 +100,8 @@ struct CardHeader: View {
             Text(subtitle).font(Theme.body).foregroundStyle(Theme.textSecondary)
             Chip(text: badge, tint: badgeTint, background: badgeTint.opacity(0.15))
             Spacer()
-            Chip(text: AgentLabel.name(session.key.source))
+            AgentIconChip(source: session.key.source)
+            TerminalBadge(terminal: session.terminal)
         }
     }
 }

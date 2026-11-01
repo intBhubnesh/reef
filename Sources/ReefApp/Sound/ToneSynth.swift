@@ -1,7 +1,7 @@
 import AVFoundation
 import ReefCore
 
-/// Three tiny square-wave motifs rendered at 44.1 kHz; no bundled audio files.
+/// Tiny square-wave fallbacks rendered at 44.1 kHz when a bundled effect cannot be loaded.
 enum ToneSynth {
     static let sampleRate: Double = 44_100
 
@@ -9,6 +9,8 @@ enum ToneSynth {
 
     static func motif(_ kind: SoundKind) -> [Note] {
         switch kind {
+        case .started: return [Note(frequency: 440, duration: 0.06), Note(frequency: 554, duration: 0.06)]
+        case .actionCompleted: return [Note(frequency: 740, duration: 0.05)]
         case .inputNeeded: return [Note(frequency: 660, duration: 0.09), Note(frequency: 880, duration: 0.09)]
         case .done: return [Note(frequency: 523, duration: 0.08), Note(frequency: 659, duration: 0.08), Note(frequency: 784, duration: 0.08)]
         case .failed: return [Note(frequency: 330, duration: 0.12), Note(frequency: 220, duration: 0.12)]
