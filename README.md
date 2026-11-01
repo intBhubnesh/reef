@@ -31,7 +31,7 @@ The circular agent avatar is a native SwiftUI adaptation of the MIT-licensed
 
 Reef 1.0 requires macOS 14 or newer and supports both Apple silicon and Intel Macs.
 
-1. Open `Reef-1.0.0-universal.dmg`.
+1. Open the versioned `Reef-*-universal.dmg`.
 2. Drag **Reef** into **Applications**.
 3. On the first launch, open **Applications**, Control-click Reef, choose **Open**, then confirm.
 4. Complete Reef's setup and grant Automation access when macOS asks. Accessibility access is

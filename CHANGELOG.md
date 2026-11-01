@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 — 2026-11-01
+
+- Add a visible compact quit button to the notch header for accessory-mode installs.
+
 ## 1.0.0 — 2026-11-01
 
 - Track Claude Code and Codex sessions from terminals and VS Code.
