@@ -40,6 +40,8 @@ public struct ReefSettings: Codable, Equatable {
     /// User-selectable status → Bloub emotion mapping. Invalid or missing entries fall back to
     /// `AvatarStatusSlot.defaultEmotion` at the point of use.
     public var avatarEmotionByStatus = AvatarStatusSlot.defaultMapping
+    /// Reef's orb or an open-bot-avatar catalogue id. Unknown ids resolve to the orb at render time.
+    public var avatarDesignID = AvatarDesign.orb.id
 
     public init() {}
 
@@ -81,6 +83,7 @@ public struct ReefSettings: Codable, Equatable {
         }
         avatarEmotionByStatus = try c.decodeIfPresent([String: String].self, forKey: .avatarEmotionByStatus)
             ?? d.avatarEmotionByStatus
+        avatarDesignID = try c.decodeIfPresent(String.self, forKey: .avatarDesignID) ?? d.avatarDesignID
     }
 
     public static func load(from url: URL) -> ReefSettings {

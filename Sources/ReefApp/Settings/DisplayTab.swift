@@ -6,6 +6,7 @@ struct DisplayTab: View {
     @State private var previewStart = Date()
 
     private let emotionColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
+    private var selectedDesign: AvatarDesign { AvatarDesign.resolve(app.settings.avatarDesignID) }
 
     var body: some View {
         @Bindable var app = app
@@ -18,7 +19,15 @@ struct DisplayTab: View {
             .padding(.vertical, 16)
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        SettingsGroup(title: "All Bloub emotions") {
+        SettingsGroup(title: "Avatar shape") {
+            LazyVGrid(columns: emotionColumns, spacing: 10) {
+                ForEach(AvatarDesign.catalog) { design in
+                    designTile(design)
+                }
+            }
+            .padding(12)
+        }
+        SettingsGroup(title: "Expressions") {
             LazyVGrid(columns: emotionColumns, spacing: 10) {
                 ForEach(AvatarEmotion.allCases) { emotion in
                     emotionTile(emotion)
@@ -77,7 +86,8 @@ struct DisplayTab: View {
                 phaseStart: previewStart,
                 cell: 4,
                 reduceMotion: app.reduceMotion,
-                emotion: app.avatarEmotion(for: slot)
+                emotion: app.avatarEmotion(for: slot),
+                design: selectedDesign
             )
             VStack(alignment: .leading, spacing: 1) {
                 Text(slot.title)
@@ -113,7 +123,8 @@ struct DisplayTab: View {
                 reduceMotion: app.reduceMotion,
                 emotion: emotion,
                 bodyColor: .black,
-                eyeColor: .white
+                eyeColor: .white,
+                design: selectedDesign
             )
             Text(emotion.title)
                 .font(.caption)
@@ -124,6 +135,39 @@ struct DisplayTab: View {
         .frame(maxWidth: .infinity, minHeight: 80)
         .padding(.vertical, 7)
         .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    private func designTile(_ design: AvatarDesign) -> some View {
+        let selected = selectedDesign.id == design.id
+        return Button {
+            app.settings.avatarDesignID = design.id
+        } label: {
+            VStack(spacing: 5) {
+                CharacterSprite(status: .idle,
+                                seed: UInt64(AvatarDesign.catalog.firstIndex { $0.id == design.id } ?? 0) + 30,
+                                phaseStart: previewStart,
+                                cell: 6.5,
+                                reduceMotion: app.reduceMotion,
+                                emotion: .neutral,
+                                bodyColor: .black,
+                                eyeColor: .white,
+                                design: design)
+                Text(design.title)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+            .frame(maxWidth: .infinity, minHeight: 74)
+            .padding(.vertical, 6)
+            .background(selected ? Color.accentColor.opacity(0.14) : Color(nsColor: .windowBackgroundColor),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(selected ? Color.accentColor : Color.primary.opacity(0.07), lineWidth: selected ? 2 : 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Use \(design.title) avatar")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func statusColorName(_ status: SessionStatus) -> String {
@@ -168,7 +212,8 @@ struct PillPreview: View {
                         emotion: AvatarStatusSlot.emotion(
                             for: status,
                             mapping: app.settings.avatarEmotionByStatus
-                        ))
+                        ),
+                        design: AvatarDesign.resolve(app.settings.avatarDesignID))
             .help(help)
     }
 }

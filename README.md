@@ -26,6 +26,8 @@ notification bodies contain only project/status metadata, never prompts or comma
 The circular agent avatar is a native SwiftUI adaptation of the MIT-licensed
 [Bloub](https://github.com/jeremy-prt/bloub) animation model. See
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+Display settings also include 22 native object silhouettes adapted from the MIT-licensed
+[Open Bot Avatar](https://github.com/DominikScholz/open-bot-avatar) catalogue.
 
 ## Install a release build
 

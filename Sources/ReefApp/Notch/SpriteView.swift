@@ -17,6 +17,7 @@ struct SessionSprite: View {
                         emotion: AvatarStatusSlot.emotion(
                             for: session.status,
                             mapping: app.settings.avatarEmotionByStatus
-                        ))
+                        ),
+                        design: AvatarDesign.resolve(app.settings.avatarDesignID))
     }
 }

@@ -24,6 +24,7 @@ final class ReefSettingsTests: XCTestCase {
         XCTAssertTrue(s.barkNotifyInputNeeded && s.barkNotifyDone && s.barkNotifyFailed)
         XCTAssertEqual(s.barkNotificationLevel, .active)
         XCTAssertEqual(s.avatarEmotionByStatus, AvatarStatusSlot.defaultMapping)
+        XCTAssertEqual(s.avatarDesignID, AvatarDesign.orb.id)
     }
 
     func testRoundTrip() throws {
@@ -31,6 +32,7 @@ final class ReefSettingsTests: XCTestCase {
         s.hoverDelay = 0.4; s.muted = true; s.showBranch = false; s.panelMaxWidth = 500
         s.barkEnabled = true; s.barkServerURL = "https://bark.example"; s.barkLevel = "timeSensitive"
         s.avatarEmotionByStatus[AvatarStatusSlot.done.rawValue] = AvatarEmotion.laughing.rawValue
+        s.avatarDesignID = "ghost"
         let url = tempURL()
         try s.save(to: url)
         XCTAssertEqual(ReefSettings.load(from: url), s)

@@ -1,9 +1,9 @@
 import ReefCore
 import SwiftUI
 
-/// Reef's agent avatar, adapted from the visual model used by Bloub: a circular body with
-/// capsule-shaped eyes that feel embedded in its surface. The web original renders SVG paths;
-/// this native version draws the same primitives directly into a SwiftUI `Canvas`.
+/// Reef's native agent-avatar renderer: Bloub's expressive spherical eyes on either the original
+/// orb or an object silhouette from open-bot-avatar. Everything is drawn directly in a SwiftUI
+/// `Canvas`; no web view or raster sprite is involved.
 ///
 /// The animation remains a pure function of status, elapsed time and session seed. That keeps
 /// multiple agents from moving in lockstep and means Reduce Motion can freeze an exact pose.
@@ -22,6 +22,8 @@ struct CharacterSprite: View {
     /// status colour and island-coloured eye cut-outs.
     var bodyColor: Color? = nil
     var eyeColor: Color? = nil
+    /// The original orb or one of the bundled open-bot-avatar silhouettes.
+    var design: AvatarDesign = .orb
 
     private var diameter: CGFloat { cell * CGFloat(Metrics.spriteColumns) }
 
@@ -49,24 +51,23 @@ struct CharacterSprite: View {
             let side = min(size.width, size.height)
             let center = CGPoint(x: size.width / 2 + pose.driftX * side,
                                  y: size.height / 2 + pose.driftY * side)
-            // Bloub reserves a wide SVG viewBox for its orbit states. Reef's header is much
-            // smaller, so 82% leaves enough room for the same silhouette without shrinking it
-            // past legibility at 16 pt.
-            let bodySide = side * 0.82
-            let bodyRect = CGRect(x: center.x - bodySide / 2,
-                                  y: center.y - bodySide * pose.bodyScaleY / 2,
-                                  width: bodySide,
-                                  height: bodySide * pose.bodyScaleY)
-
-            context.fill(Path(ellipseIn: bodyRect), with: .color(color))
+            // The orb reserves room for its orbit. Object paths already leave an 8% design
+            // margin in their 0...100 viewBox and can use the complete square.
+            let bodySide = design.isOrb ? side * 0.82 : side
+            drawBody(in: &context, center: center, side: bodySide, pose: pose, color: color)
 
             if pose.showsOrbit {
                 drawOrbit(in: &context, center: center, side: side,
                           angle: pose.orbitAngle, color: color)
             }
 
-            drawEyes(in: &context, center: center, bodySide: bodySide,
-                     pose: pose, color: eyeColor ?? Theme.panel)
+            if design.isOrb {
+                drawOrbEyes(in: &context, center: center, bodySide: bodySide,
+                            pose: pose, color: eyeColor ?? Theme.panel)
+            } else {
+                drawObjectEyes(in: &context, center: center, side: side,
+                               pose: pose, color: eyeColor ?? Theme.panel)
+            }
 
             if pose.badgeScale > 0 {
                 let badgeRadius = bodySide * 0.115 * pose.badgeScale
@@ -87,8 +88,25 @@ struct CharacterSprite: View {
         .shadow(color: color.opacity(0.42), radius: max(0.8, cell * 0.55))
     }
 
-    private func drawEyes(in context: inout GraphicsContext, center: CGPoint,
-                          bodySide: CGFloat, pose: OrbFrame, color: Color) {
+    private func drawBody(in context: inout GraphicsContext, center: CGPoint,
+                          side: CGFloat, pose: OrbFrame, color: Color) {
+        if let body = design.bodyPath {
+            let scale = side / 100
+            let transform = CGAffineTransform(a: scale, b: 0, c: 0,
+                                              d: scale * pose.bodyScaleY,
+                                              tx: center.x - 50 * scale,
+                                              ty: center.y - 50 * scale * pose.bodyScaleY)
+            context.fill(Path(body).applying(transform), with: .color(color))
+        } else {
+            let rect = CGRect(x: center.x - side / 2,
+                              y: center.y - side * pose.bodyScaleY / 2,
+                              width: side, height: side * pose.bodyScaleY)
+            context.fill(Path(ellipseIn: rect), with: .color(color))
+        }
+    }
+
+    private func drawOrbEyes(in context: inout GraphicsContext, center: CGPoint,
+                             bodySide: CGFloat, pose: OrbFrame, color: Color) {
         let radius = bodySide / 2
         for eye in pose.eyes {
             // Bloub builds a capsule at the origin in radius-relative units, then applies the
@@ -103,6 +121,39 @@ struct CharacterSprite: View {
                 a: eye.a, b: eye.b, c: eye.c, d: eye.d,
                 tx: center.x + eye.x * radius,
                 ty: center.y + eye.y * radius
+            ))
+            context.fill(path, with: .color(color.opacity(eye.alpha)))
+        }
+    }
+
+    /// Keeps Reef's expressive eye shapes and deterministic gaze while anchoring the pair to the
+    /// face location supplied by each object definition. The small shared shift carries the head
+    /// turn without letting either eye escape narrow silhouettes.
+    private func drawObjectEyes(in context: inout GraphicsContext, center: CGPoint,
+                                side: CGFloat, pose: OrbFrame, color: Color) {
+        guard !pose.eyes.isEmpty else { return }
+        let radius = side / 2
+        let unit = side / 100
+        let meanX = pose.eyes.reduce(CGFloat.zero) { $0 + $1.x } / CGFloat(pose.eyes.count)
+        let meanY = pose.eyes.reduce(CGFloat.zero) { $0 + $1.y } / CGFloat(pose.eyes.count)
+        let shift = CGPoint(x: meanX * radius * 0.11, y: meanY * radius * 0.08)
+
+        for (index, eye) in pose.eyes.prefix(2).enumerated() {
+            let sideOfPair: CGFloat = index == 0 ? -1 : 1
+            let anchor = CGPoint(
+                x: center.x + (design.eyes.x + sideOfPair * design.eyeSpacing / 2 - 50) * unit + shift.x,
+                y: center.y + (design.eyes.y - 50) * unit * pose.bodyScaleY + shift.y
+            )
+            // Object definitions use restrained four-unit eyes. Expression width still expands
+            // surprised/scared faces, but this factor keeps neutral eyes at that native scale.
+            let eyeFactor = 0.52 * design.eyeScale
+            let width = max(0.01, eye.width * radius * eyeFactor)
+            let height = max(0.01, eye.height * radius * eyeFactor)
+            let rect = CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
+            var path = Path(roundedRect: rect, cornerRadius: min(width, height) / 2)
+            path = path.applying(CGAffineTransform(
+                a: eye.a, b: eye.b, c: eye.c, d: eye.d,
+                tx: anchor.x, ty: anchor.y
             ))
             context.fill(path, with: .color(color.opacity(eye.alpha)))
         }
